@@ -1,0 +1,8 @@
+{
+  "appId": "com.inventory.serviceapp",
+  "appName": "Inventory Service",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

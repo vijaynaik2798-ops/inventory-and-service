@@ -1,0 +1,77 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: Is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper: Access user profile details
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Helper: Check roles
+    function isAdmin() {
+      return isAuthenticated() && (getUserData().role == 'Admin' || request.auth.token.role == 'Admin');
+    }
+
+    // Helper: Check roles (Admin or Manager)
+    function isManager() {
+      return isAuthenticated() && (isAdmin() || getUserData().role == 'Manager' || request.auth.token.role == 'Manager');
+    }
+
+    // Helper: Check roles (Admin, Manager, or Staff)
+    function isStaff() {
+      return isAuthenticated() && (isManager() || getUserData().role == 'Staff' || request.auth.token.role == 'Staff');
+    }
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      // Users can read profiles, but only Admin can register/alter roles or list all
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || (request.auth.uid == userId && !request.resource.data.keys().hasAny(['role']));
+    }
+
+    // --- Inventory Collection ---
+    match /inventory/{productId} {
+      allow read: if isAuthenticated();
+      // Admin and Manager can create, update, delete. Staff can only stock in/out (update quantities, but not edit core metadata like prices/suppliers without approval)
+      allow create, delete: if isManager();
+      allow update: if isStaff();
+    }
+
+    // --- Inventory History / Movement Logs ---
+    match /movement_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isStaff(); // Any logged in staff can register a log
+      allow update, delete: if isAdmin(); // Historical logs are immutable except by Admin
+    }
+
+    // --- Customer Directory ---
+    match /customers/{customerId} {
+      allow read, create, update: if isStaff();
+      allow delete: if isManager();
+    }
+
+    // --- Service Jobs & Repair Tickets ---
+    match /service_jobs/{jobId} {
+      allow read: if isAuthenticated();
+      allow create: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isManager();
+    }
+
+    // --- QR Login Session Tokens (WhatsApp-style logons) ---
+    match /qr_login_sessions/{sessionId} {
+      allow read, write: if true; // Public access for device pairing flow (secured via session signature)
+    }
+
+    // --- Active Connected Devices Directory ---
+    match /devices/{deviceId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+  }
+}

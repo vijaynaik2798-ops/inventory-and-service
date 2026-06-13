@@ -1,0 +1,36 @@
+name: inventory_service_app
+description: "A professional Flutter-based Inventory & Service Management App for iOS and Android, completed with Firebase setup and WhatsApp-style QR Login."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: "^3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.5
+  firebase_core: ^2.15.0
+  firebase_auth: ^4.7.0
+  cloud_firestore: ^4.8.0
+  mobile_scanner: ^3.2.0
+  qr_flutter: ^4.1.0
+  uuid: ^3.0.7
+  provider: ^6.0.5
+  intl: ^0.18.1
+  excel: ^4.0.0
+  fl_chart: ^0.63.0
+  share_plus: ^7.1.0
+  path_provider: ^2.0.15
+  permission_handler: ^10.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    # Feel free to link your local vectors or branding images here
+    - assets/

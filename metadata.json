@@ -1,0 +1,6 @@
+{
+  "name": "Inventory Service",
+  "description": "Professional mobile-first inventory and service workflow manager for CCTV and electronics businesses.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
