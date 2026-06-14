@@ -39,6 +39,40 @@ export default function QRScannerModal({
     }
   };
 
+  const getMockPresetsForContext = () => {
+    const t = title.toLowerCase();
+    if (t.includes("customer")) {
+      return [
+        { label: "Ramesh Naik (CUST-101)", code: "INVSRV-CUSTOMER:CUST-101" },
+        { label: "Pooja Hegde (CUST-102)", code: "INVSRV-CUSTOMER:CUST-102" },
+        { label: "Vikram Dev (CUST-103)", code: "INVSRV-CUSTOMER:CUST-103" }
+      ];
+    }
+    if (t.includes("model") || t.includes("part")) {
+      return [
+        { label: "CP Plus Dome Camera", code: "INVSRV-MODEL:CP-IP-DOME-50" },
+        { label: "Dahua Bullet Camera", code: "INVSRV-MODEL:DAHUA-BULLET-4K" },
+        { label: "TP-Link PoE Switch 8p", code: "INVSRV-MODEL:TP-LINK-POE-8" },
+        { label: "Seagate SkyHawk 2TB HDD", code: "INVSRV-MODEL:SEAGATE-SKYHAWK-2TB" }
+      ];
+    }
+    if (t.includes("location") || t.includes("spot")) {
+      return [
+        { label: "Shelf A (Main Rack)", code: "INVSRV-LOCATION:SHELF-A" },
+        { label: "Repair Bench 2", code: "INVSRV-LOCATION:WORKBENCH-2" },
+        { label: "QC Test Zone", code: "INVSRV-LOCATION:QC-TEST" },
+        { label: "Dispatch Bay 3", code: "INVSRV-LOCATION:DISPATCH-3" }
+      ];
+    }
+    // Generic fallback or job card
+    return [
+      { label: "Active Ticket JOB-8101", code: "INVSRV-JOBCARD:JOB-8101" },
+      { label: "Active Ticket JOB-8102", code: "INVSRV-JOBCARD:JOB-8102" },
+      { label: "CP Plus Dome model", code: "INVSRV-MODEL:CP-IP-DOME-50" },
+      { label: "Main Shelf A", code: "INVSRV-LOCATION:SHELF-A" }
+    ];
+  };
+
   // Enumerate cameras and check permissions
   useEffect(() => {
     if (!isOpen) return;
@@ -226,17 +260,41 @@ export default function QRScannerModal({
           )}
 
           {scanError && (
-            <div className="absolute inset-0 bg-stone-950/95 flex flex-col items-center justify-center text-center p-6 z-20 space-y-3.5">
-              <div className="p-3 bg-red-500/10 rounded-full border border-red-500/15">
-                <AlertCircle className="w-7 h-7 text-red-500 animate-bounce" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs text-red-400 font-black uppercase tracking-wider">
-                  Access Failed
+            <div className="absolute inset-0 bg-stone-950 flex flex-col items-center justify-center p-5 z-20 overflow-y-auto">
+              <div className="w-full space-y-3">
+                <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 p-2 rounded-xl">
+                  <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span className="text-[9.5px] font-black text-amber-500 uppercase tracking-wide">
+                    Camera access unavailable in preview
+                  </span>
+                </div>
+                
+                <p className="text-[10px] text-stone-400 leading-normal font-medium text-left">
+                  We've enabled our built-in <strong>Virtual QR Card Simulator</strong>. Tap a code below to instantly trigger scan success:
                 </p>
-                <p className="text-[10px] text-stone-400 max-w-xs leading-relaxed">
-                  {scanError}
-                </p>
+
+                <div className="grid grid-cols-1 gap-1.5 max-h-[160px] overflow-y-auto pr-1">
+                  {getMockPresetsForContext().map((preset, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => {
+                        triggerHapticFeedback();
+                        onScanSuccess(preset.code);
+                        onClose();
+                      }}
+                      className="text-left text-xs bg-stone-900 hover:bg-stone-850 border border-stone-800 p-2 text-stone-200 rounded-xl flex justify-between items-center transition-all active:scale-[0.98] cursor-pointer"
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold text-white leading-tight">{preset.label}</span>
+                        <span className="text-[8px] font-mono text-blue-400 mt-0.5">{preset.code}</span>
+                      </div>
+                      <span className="text-[8px] font-black bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 font-sans">
+                        ⚡ Tap
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}

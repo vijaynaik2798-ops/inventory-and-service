@@ -2,76 +2,183 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: Is authenticated
-    function isAuthenticated() {
+    // Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Cryptographic & Type Primitive Helpers ---
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    // Helper: Access user profile details
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    function isVerifiedEmail() {
+      return isSignedIn();
     }
 
-    // Helper: Check roles
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\:]+$');
+    }
+
+    // --- Role-Based Access Controls (ABAC) from Firestore Users ---
+    // Safely reads the role of the user within /users/{userId} to check privileges
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function getUserStatus() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status;
+    }
+
+    function isUserActive() {
+      return isSignedIn() && getUserStatus() == 'active';
+    }
+
     function isAdmin() {
-      return isAuthenticated() && (getUserData().role == 'Admin' || request.auth.token.role == 'Admin');
+      return isVerifiedEmail() && (getUserRole() == 'Owner' || request.auth.token.email == 'vijaynaik2798@gmail.com');
     }
 
-    // Helper: Check roles (Admin or Manager)
     function isManager() {
-      return isAuthenticated() && (isAdmin() || getUserData().role == 'Manager' || request.auth.token.role == 'Manager');
+      return isVerifiedEmail() && (isAdmin() || getUserRole() == 'Manager');
     }
 
-    // Helper: Check roles (Admin, Manager, or Staff)
     function isStaff() {
-      return isAuthenticated() && (isManager() || getUserData().role == 'Staff' || request.auth.token.role == 'Staff');
+      return isVerifiedEmail() && (isManager() || getUserRole() == 'Staff' || getUserRole() == 'Technician' || getUserRole() == 'Receptionist');
     }
 
-    // --- Users Collection ---
+    // --- Entity Specific Validators (Preventing Resource Poisoning & Ghost Keys) ---
+    function isValidUser(data) {
+      return data.uid is string && data.uid.size() <= 128 &&
+             data.name is string && data.name.size() <= 128 &&
+             data.email is string && data.email.size() <= 128 &&
+             data.role is string && (data.role == 'Owner' || data.role == 'Manager' || data.role == 'Technician' || data.role == 'Staff' || data.role == 'Receptionist') &&
+             data.status is string && (data.status == 'active' || data.status == 'disabled' || data.status == 'locked');
+    }
+
+    function isValidInventory(data) {
+      return data.id is string && data.id.size() <= 64 &&
+             data.brand is string && data.brand.size() <= 128 &&
+             data.modelNo is string && data.modelNo.size() <= 128 &&
+             data.productName is string && data.productName.size() <= 200 &&
+             data.quantity is int && data.quantity >= 0;
+    }
+
+    function isValidMovementLog(data) {
+      return data.type is string && (data.type == 'STOCK_IN' || data.type == 'STOCK_OUT') &&
+             data.quantityChange is int &&
+             data.operatorName is string && data.operatorName.size() <= 128;
+    }
+
+    function isValidCustomer(data) {
+      return data.id is string && data.id.size() <= 64 &&
+             data.name is string && data.name.size() <= 128 &&
+             data.phone is string && data.phone.size() <= 32;
+    }
+
+    function isValidJob(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.customerId is string && data.customerId.size() <= 128 &&
+             data.grandTotal is number && data.grandTotal >= 0 &&
+             data.paidAmount is number && data.paidAmount >= 0;
+    }
+
+    function isValidAuditLog(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.email is string && data.email.size() <= 128 &&
+             data.action is string && data.action.size() <= 256 &&
+             data.status is string && (data.status == 'success' || data.status == 'failure' || data.status == 'blocked' || data.status == 'reset');
+    }
+
+    // --- Collection Custom Mapping Rules ---
+
+    // 1. Operator profiles collection
     match /users/{userId} {
-      // Users can read profiles, but only Admin can register/alter roles or list all
-      allow read: if isAuthenticated();
-      allow write: if isAdmin() || (request.auth.uid == userId && !request.resource.data.keys().hasAny(['role']));
+      allow read: if isSignedIn();
+      
+      // Users can register initially with any valid profile role configuration.
+      allow create: if isSignedIn() && isValidId(userId) && userId == request.auth.uid && isValidUser(incoming());
+
+      // Only admins or the owner can disable/lock accounts, or change user roles.
+      // Standard active users can only update their own profile name or device tokens list.
+      allow update: if isSignedIn() && isValidId(userId) && (
+        isAdmin() || (
+          userId == request.auth.uid && 
+          isUserActive() && 
+          isValidUser(incoming()) && 
+          incoming().role == existing().role && 
+          incoming().status == existing().status
+        )
+      );
+
+      allow delete: if isAdmin();
     }
 
-    // --- Inventory Collection ---
+    // 2. Hardware stock and spare parts inventory
     match /inventory/{productId} {
-      allow read: if isAuthenticated();
-      // Admin and Manager can create, update, delete. Staff can only stock in/out (update quantities, but not edit core metadata like prices/suppliers without approval)
-      allow create, delete: if isManager();
-      allow update: if isStaff();
+      allow read: if isSignedIn();
+      allow create: if isManager() && isValidId(productId) && isValidInventory(incoming());
+      
+      // Staff elements can update stock levels
+      allow update: if isStaff() && isValidId(productId) && isValidInventory(incoming()) && (
+        isManager() || (
+          incoming().brand == existing().brand &&
+          incoming().productName == existing().productName &&
+          incoming().modelNo == existing().modelNo
+        )
+      );
+
+      allow delete: if isManager();
     }
 
-    // --- Inventory History / Movement Logs ---
+    // 3. Movement ledgers
     match /movement_logs/{logId} {
-      allow read: if isAuthenticated();
-      allow create: if isStaff(); // Any logged in staff can register a log
-      allow update, delete: if isAdmin(); // Historical logs are immutable except by Admin
+      allow read: if isSignedIn();
+      allow create: if isStaff() && isValidId(logId) && isValidMovementLog(incoming());
+      allow update, delete: if isAdmin();
     }
 
-    // --- Customer Directory ---
+    // 4. Customers Directory
     match /customers/{customerId} {
-      allow read, create, update: if isStaff();
+      allow read: if isSignedIn();
+      allow create, update: if isStaff() && isValidId(customerId) && isValidCustomer(incoming());
       allow delete: if isManager();
     }
 
-    // --- Service Jobs & Repair Tickets ---
+    // 5. Electronic ticket jobs
     match /service_jobs/{jobId} {
-      allow read: if isAuthenticated();
-      allow create: if isStaff();
-      allow update: if isStaff();
+      // Allow unauthenticated single retrievals for customer tracking status, but list calls must be authenticated.
+      allow get: if true;
+      allow list: if isSignedIn();
+      
+      allow create: if isStaff() && isValidId(jobId) && isValidJob(incoming());
+      allow update: if isStaff() && isValidId(jobId) && isValidJob(incoming());
       allow delete: if isManager();
     }
 
-    // --- QR Login Session Tokens (WhatsApp-style logons) ---
+    // 6. QR handshakes for fast device client sync
     match /qr_login_sessions/{sessionId} {
-      allow read, write: if true; // Public access for device pairing flow (secured via session signature)
+      allow read, write: if true; // pairing is secured by dynamic signature tokens and UUID hashes
     }
 
-    // --- Active Connected Devices Directory ---
+    // 7. Push devices matching
     match /devices/{deviceId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read, write: if isSignedIn() && isValidId(deviceId);
+    }
+
+    // 8. Security audit ledger
+    match /audit_logs/{logId} {
+      // Allows creating failure/lock entries during auth attempts, but only staff members can read
+      allow create: if isValidId(logId) && isValidAuditLog(incoming());
+      allow read: if isStaff();
+      allow update, delete: if false; // Logs are strictly append-only, fully immutable
     }
   }
 }

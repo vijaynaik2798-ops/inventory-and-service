@@ -81,6 +81,91 @@ export default function ServicesTab({
   const [selectedJob, setSelectedJob] = useState<ServiceJob | null>(null);
   const [selectedItem, setSelectedItem] = useState<ServiceItem | null>(null);
 
+  // AI Diagnostic States
+  const [isAnalyzingDI, setIsAnalyzingDI] = useState(false);
+  const [aiDiagnosticData, setAiDiagnosticData] = useState<{
+    possibleCauses: string[];
+    diagnosticSteps: string[];
+    estimatedHours: string;
+    recommendedParts: string[];
+    proActiveTips: string;
+  } | null>(null);
+
+  // Clear AI data when selected item changes
+  useEffect(() => {
+    setAiDiagnosticData(null);
+  }, [selectedItem?.id]);
+
+  const handleRunAIDiagnosis = async () => {
+    if (!selectedItem) return;
+    setIsAnalyzingDI(true);
+    setAiDiagnosticData(null);
+    try {
+      const response = await fetch("/api/ai/diagnose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          issueDescription: `${selectedItem.productName} (${selectedItem.category}): ${selectedItem.problemDescription || "blurry picture / power issue"}. Brand: ${selectedItem.brand}`
+        })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAiDiagnosticData(data);
+        showToast("AI diagnostics retrieved successfully", "success");
+      } else {
+        try {
+          const err = await response.json();
+          showToast(err.error || "AI diagnose failed", "error");
+        } catch {
+          showToast("AI diagnose failed", "error");
+        }
+      }
+    } catch (err: any) {
+      showToast(err.message || "Failed to analyze with AI", "error");
+    } finally {
+      setIsAnalyzingDI(false);
+    }
+  };
+
+  // AI SMS/WhatsApp copy draft states
+  const [isDraftingMsg, setIsDraftingMsg] = useState(false);
+  const [draftedMsg, setDraftedMsg] = useState<string | null>(null);
+  const [showDraftModal, setShowDraftModal] = useState(false);
+
+  const handleDraftAIUpdateMessage = async (customerName: string, jobNo: string, itemsDesc: string, status: string) => {
+    setIsDraftingMsg(true);
+    setDraftedMsg(null);
+    setShowDraftModal(true);
+    try {
+      const response = await fetch("/api/ai/draft-msg", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName,
+          jobNo,
+          itemsDescription: itemsDesc,
+          status
+        })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDraftedMsg(data.messageText);
+        showToast("AI notification draft generated", "success");
+      } else {
+        try {
+          const err = await response.json();
+          showToast(err.error || "AI copywriting failed", "error");
+        } catch {
+          showToast("AI copywriting failed", "error");
+        }
+      }
+    } catch (err: any) {
+      showToast(err.message || "Failed to generate update draft", "error");
+    } finally {
+      setIsDraftingMsg(false);
+    }
+  };
+
   // New Job Builder States
   const [showAddJobModal, setShowAddJobModal] = useState(false);
   const [selectedCustId, setSelectedCustId] = useState("");
@@ -1022,7 +1107,7 @@ export default function ServicesTab({
                 </div>
 
                 {/* Secure Customer Live Status Link Share */}
-                <div className="pt-2 border-t border-gray-100 dark:border-stone-800">
+                <div className="pt-2 border-t border-gray-100 dark:border-stone-800 space-y-2">
                   <button
                     onClick={() => {
                       const cust = customers.find(c => c.id === selectedJob.customerId);
@@ -1039,6 +1124,23 @@ export default function ServicesTab({
                   >
                     <MessageSquare className="w-3.5 h-3.5 shrink-0" />
                     <span>Share Status Tracking Link</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const cust = customers.find(c => c.id === selectedJob.customerId);
+                      if (cust) {
+                        const itemsStr = selectedJob.items.map(it => `${it.productName} (${it.status})`).join(", ");
+                        const statusSummary = selectedJob.items.map(it => it.status).join(" / ");
+                        handleDraftAIUpdateMessage(cust.name, selectedJob.id, itemsStr, statusSummary);
+                      } else {
+                        showToast("Cannot locate client contact info!", "error");
+                      }
+                    }}
+                    disabled={isDraftingMsg}
+                    className="w-full bg-indigo-650 hover:bg-indigo-700 disabled:bg-indigo-400 active:scale-97 transition-all text-white py-2 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-xs cursor-pointer select-none"
+                  >
+                    <span>✨ Draft AI WhatsApp Update</span>
                   </button>
                 </div>
               </div>
@@ -1163,6 +1265,94 @@ export default function ServicesTab({
                       </span>
                       {selectedItem.problemDescription || "Needs testing check"}
                     </div>
+                  </div>
+
+                  {/* Gemini AI Troubleshooting Assistant */}
+                  <div className="bg-indigo-500/5 dark:bg-indigo-500/5 border border-indigo-500/10 rounded-2xl p-3 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[9px] font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1">
+                        ✨ Gemini AI Diagnostic Lab
+                      </span>
+                      <button
+                        onClick={handleRunAIDiagnosis}
+                        disabled={isAnalyzingDI}
+                        className="text-[9px] font-black text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-450 px-2 py-1 rounded-lg transition-all cursor-pointer shadow-xs active:scale-95"
+                      >
+                        {isAnalyzingDI ? "Analyzing..." : "⚡ Diagnose Device"}
+                      </button>
+                    </div>
+
+                    {isAnalyzingDI && (
+                      <div className="space-y-2 py-2 text-center">
+                        <div className="w-5 h-5 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin mx-auto"></div>
+                        <p className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 animate-pulse">
+                          Querying repair schemas, auditing component diagnostics...
+                        </p>
+                      </div>
+                    )}
+
+                    {aiDiagnosticData && (
+                      <div className="space-y-3.5 text-left border-t border-indigo-500/10 pt-2.5 transition-all">
+                        {/* Causes */}
+                        <div>
+                          <span className="block text-[8px] font-black text-rose-500 uppercase tracking-wider mb-1">
+                            Likely Causes
+                          </span>
+                          <ul className="space-y-0.5">
+                            {aiDiagnosticData.possibleCauses.map((cause, idx) => (
+                              <li key={idx} className="text-[10px] text-gray-700 dark:text-stone-300 flex items-start gap-1">
+                                <span className="text-rose-500">•</span>
+                                <span>{cause}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {/* Steps */}
+                        <div>
+                          <span className="block text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">
+                            Diagnostic Procedures
+                          </span>
+                          <ol className="space-y-1 list-decimal list-inside text-[10px] text-gray-700 dark:text-stone-300 leading-tight">
+                            {aiDiagnosticData.diagnosticSteps.map((step, idx) => (
+                              <li key={idx}>
+                                <span>{step}</span>
+                              </li>
+                            ))}
+                          </ol>
+                        </div>
+
+                        {/* Parts & Time */}
+                        <div className="grid grid-cols-2 gap-2 bg-white dark:bg-stone-800/40 p-2 rounded-xl border border-indigo-550/5">
+                          <div>
+                            <span className="block text-[8px] font-black text-gray-450 uppercase tracking-wider">
+                              Est. Hours
+                            </span>
+                            <span className="text-[10px] font-black text-indigo-650 dark:text-indigo-400">
+                              {aiDiagnosticData.estimatedHours}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[8px] font-black text-gray-450 uppercase tracking-wider">
+                              Suggested Spares
+                            </span>
+                            <span className="text-[10px] font-black text-gray-700 dark:text-stone-300 truncate block">
+                              {aiDiagnosticData.recommendedParts.join(", ")}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Pro Tip */}
+                        <div className="p-2.5 bg-indigo-500/5 rounded-xl border border-indigo-500/10">
+                          <span className="block text-[8px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-0.5">
+                            💡 Tech Pro-Tip
+                          </span>
+                          <p className="text-[10px] text-gray-650 dark:text-stone-300 italic">
+                            "{aiDiagnosticData.proActiveTips}"
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Status Timeline Workflow update */}
@@ -2460,6 +2650,76 @@ export default function ServicesTab({
         title={`Scanning: ${scannerTargetForm ? scannerTargetForm.toUpperCase() : "Code"}`}
         placeholder="Or type manual code/ID..."
       />
+
+      {/* AI Draft Copy message modal popup */}
+      {showDraftModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
+          <div className="bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 rounded-3xl max-w-sm w-full p-5 shadow-2xl relative space-y-3.5">
+            <button
+              onClick={() => {
+                setShowDraftModal(false);
+                setDraftedMsg(null);
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-stone-700 dark:hover:text-stone-250 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <span className="p-1 px-2.5 rounded-full bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 text-[8px] font-black uppercase tracking-widest">
+                Gemini AI Messaging Desk
+              </span>
+              <h3 className="text-sm font-black text-gray-900 dark:text-white mt-1.5 uppercase">
+                Customer Update Draft
+              </h3>
+            </div>
+
+            {isDraftingMsg ? (
+              <div className="py-8 text-center space-y-3">
+                <div className="w-5 h-5 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin mx-auto"></div>
+                <p className="text-[10px] font-bold text-indigo-605 dark:text-indigo-400 animate-pulse">
+                  Drafting customized status notifications with elegant tone guidelines...
+                </p>
+              </div>
+            ) : draftedMsg ? (
+              <div className="space-y-3 text-left">
+                <textarea
+                  readOnly
+                  rows={8}
+                  value={draftedMsg}
+                  className="w-full text-xs font-mono p-3 bg-stone-50 dark:bg-stone-950 border border-stone-250 dark:border-stone-800/80 rounded-2xl text-gray-805 dark:text-stone-200 focus:outline-none"
+                />
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(draftedMsg);
+                      showToast("Draft copied to clipboard!", "success");
+                    }}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] py-2.5 rounded-xl transition-all cursor-pointer shadow-xs uppercase tracking-wider"
+                  >
+                    Copy Text Spares
+                  </button>
+                  <button
+                    onClick={() => {
+                      const cust = customers.find(c => c.id === selectedJob?.customerId);
+                      if (cust) {
+                        window.open(getWhatsAppClickUrl(cust.phone, draftedMsg), "_blank");
+                        showToast("Opened WhatsApp Link!", "success");
+                      }
+                    }}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-2.5 rounded-xl transition-all cursor-pointer shadow-xs uppercase tracking-wider"
+                  >
+                    Send Spares
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-red-500">Failed to auto-draft text details.</p>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   );

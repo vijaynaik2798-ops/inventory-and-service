@@ -1,0 +1,323 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account registrations, authorization levels, and device management inside the inventory workspace.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Unique Google or Email Authentication UID."
+        },
+        "name": {
+          "type": "string",
+          "description": "Full display name of the operator."
+        },
+        "email": {
+          "type": "string",
+          "description": "Primary verified email address."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["Owner", "Manager", "Technician", "Staff", "Receptionist"],
+          "description": "Authorization level of this user profile."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "disabled", "locked"],
+          "description": "Current authorization state of the operator profile."
+        },
+        "failedAttempts": {
+          "type": "integer",
+          "description": "Failed password attempt counter before account lock."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastLoginAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "devices": {
+          "type": "array",
+          "description": "Array of active logged-in device fingerprints/IDs."
+        }
+      },
+      "required": ["uid", "name", "email", "role", "status"]
+    },
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "Core electronics systems, spare parts, and diagnostic pieces in stock.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique product barcode or alphanumeric ID."
+        },
+        "brand": {
+          "type": "string",
+          "description": "Manufacturing brand name eg. Hikvision, Dahua, CP Plus."
+        },
+        "category": {
+          "type": "string",
+          "description": "Component or equipment class eg. CCTV IP Dome, Hard Drive, PoE Switch."
+        },
+        "modelNo": {
+          "type": "string",
+          "description": "Commercial model reference code."
+        },
+        "serialNo": {
+          "type": "string",
+          "description": "Manufacturer unique hardware Serial ID."
+        },
+        "productName": {
+          "type": "string",
+          "description": "Human-friendly descriptive product name."
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Current on-hand stock pieces in local stores."
+        },
+        "minQuantity": {
+          "type": "integer",
+          "description": "Minimum inventory threshhold before triggering automated low stock SMS/alerts."
+        },
+        "location": {
+          "type": "string",
+          "description": "Physical warehouse storage bin or shelf reference."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of entry creation."
+        }
+      },
+      "required": ["id", "brand", "modelNo", "productName", "quantity"]
+    },
+    "MovementLog": {
+      "title": "Stock Movement Log",
+      "description": "Single chronological audit trail documentation of warehouse stock entry or extraction.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["STOCK_IN", "STOCK_OUT"],
+          "description": "Transaction action mechanism type."
+        },
+        "quantityChange": {
+          "type": "integer",
+          "description": "Quantity added positive or deducted negative."
+        },
+        "operatorName": {
+          "type": "string",
+          "description": "Staff or Admin who logged the transaction."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional memo describing transfer reason or order numbers."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of the movement."
+        }
+      },
+      "required": ["type", "quantityChange", "operatorName", "timestamp"]
+    },
+    "Customer": {
+      "title": "Customer Profile",
+      "description": "Customer contact directory entries tracking history and details.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Alphanumeric custom assigned registry number."
+        },
+        "name": {
+          "type": "string",
+          "description": "Customer individual or commercial business name."
+        },
+        "phone": {
+          "type": "string",
+          "description": "E.164 formatted WhatsApp active mobile sequence."
+        },
+        "address": {
+          "type": "string",
+          "description": "Operational shipping or diagnostic on-site address."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Historical remarks and special instructions."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Profile enrollment timestamp."
+        }
+      },
+      "required": ["id", "name", "phone"]
+    },
+    "ServiceJob": {
+      "title": "Service Job Ticket",
+      "description": "A single electronic diagnostic job ticket containing devices, technician assignments, charges, and history.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Job ticket sequential unique reference identifier."
+        },
+        "customerId": {
+          "type": "string",
+          "description": "ID of the customer who brought in the hardware."
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "description": "Ticket entry simplified reservation date."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "System millisecond creation timestamp."
+        },
+        "waEnabled": {
+          "type": "boolean",
+          "description": "Determines if WhatsApp updates broadcast automatically."
+        },
+        "paymentStatus": {
+          "type": "string",
+          "enum": ["Paid", "Unpaid", "Partial"],
+          "description": "Current invoice settlement state."
+        },
+        "paymentMethod": {
+          "type": "string",
+          "enum": ["Cash", "Card", "UPI", "Bank Transfer"],
+          "description": "Settled transaction medium."
+        },
+        "grandTotal": {
+          "type": "number",
+          "description": "Calculated total including services, custom modifications, spares, and discount allocations."
+        },
+        "paidAmount": {
+          "type": "number",
+          "description": "Total amount paid advanced or completed."
+        }
+      },
+      "required": ["id", "customerId", "date", "grandTotal", "paidAmount"]
+    },
+    "QRLoginSession": {
+      "title": "QR Access Code Session",
+      "description": "Sync handshake tokens representing active quick-scan pairing logons.",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Cryptographically secure dynamic token UUID scanned in the barcode."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "scanned", "authenticated", "expired"],
+          "description": "Pairing state tracker."
+        },
+        "token": {
+          "type": "string",
+          "description": "Active session token shared post handshake."
+        },
+        "pairingTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Authentic pair confirmation timestamp."
+        }
+      },
+      "required": ["sessionId", "status"]
+    },
+    "DeviceConnection": {
+      "title": "Registered Device Node",
+      "description": "Active connected remote client device instances monitoring alerts.",
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "description": "Unique Client application instance UUID."
+        },
+        "registeredBy": {
+          "type": "string",
+          "description": "User UID who enrolled the hardware model."
+        },
+        "token": {
+          "type": "string",
+          "description": "Cloud messaging notification token."
+        }
+      },
+      "required": ["deviceId", "token"]
+    },
+    "AuditLog": {
+      "title": "System Audit Log",
+      "description": "Tracks sign ins, lockouts, verification, device registration, and password activities.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ipAddress": {
+          "type": "string"
+        },
+        "deviceDetails": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "email", "action", "status", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Store operator profile files and active access roles."
+    },
+    "/inventory/{productId}": {
+      "schema": "InventoryItem",
+      "description": "Main catalogue list of spare parts and retail products in warehouse ranges."
+    },
+    "/movement_logs/{logId}": {
+      "schema": "MovementLog",
+      "description": "Real-time ledger historical actions auditing entries/exemptions from storage folders."
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Store customer contacts database catalog."
+    },
+    "/service_jobs/{jobId}": {
+      "schema": "ServiceJob",
+      "description": "Active electronic service jobs tickets directory."
+    },
+    "/qr_login_sessions/{sessionId}": {
+      "schema": "QRLoginSession",
+      "description": "Pending instant and secure multi-user pairing Handshakes."
+    },
+    "/devices/{deviceId}": {
+      "schema": "DeviceConnection",
+      "description": "Registered messaging targets for auto-receiving hardware status pushes."
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System wide operators tracking audit ledger."
+    }
+  }
+}

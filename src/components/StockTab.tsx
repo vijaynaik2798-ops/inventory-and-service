@@ -52,6 +52,44 @@ export default function StockTab({
   // Selection states
   const [selectedStockItem, setSelectedStockItem] = useState<InventoryItem | null>(null);
 
+  // AI Audit States
+  const [isAuditingInventory, setIsAuditingInventory] = useState(false);
+  const [aiAuditReport, setAiAuditReport] = useState<{
+    criticalAlerts: string[];
+    restockRecommendations: string[];
+    strategicAdvice: string;
+  } | null>(null);
+  const [showAiAuditPanel, setShowAiAuditPanel] = useState(false);
+
+  const handleRunInventoryAudit = async () => {
+    setIsAuditingInventory(true);
+    setAiAuditReport(null);
+    setShowAiAuditPanel(true);
+    try {
+      const response = await fetch("/api/ai/inventory-optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inventory })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAiAuditReport(data);
+        showToast("AI supply chain audit completed", "success");
+      } else {
+        try {
+          const err = await response.json();
+          showToast(err.error || "AI stock analysis failed", "error");
+        } catch {
+          showToast("AI stock analysis failed", "error");
+        }
+      }
+    } catch (err: any) {
+      showToast(err.message || "Failed to audit inventory", "error");
+    } finally {
+      setIsAuditingInventory(false);
+    }
+  };
+
   // Forms
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAdjModal, setShowAdjModal] = useState(false);
@@ -201,6 +239,14 @@ export default function StockTab({
             <Plus className="w-4 h-4" />
             <span>Add Stock</span>
           </button>
+          
+          <button
+            onClick={handleRunInventoryAudit}
+            className="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black p-2.5 rounded-xl flex items-center gap-1 text-xs cursor-pointer shadow-sm transition-all whitespace-nowrap"
+            id="btn-stock-ai-audit"
+          >
+            <span>✨ AI Audit</span>
+          </button>
         </div>
 
         {/* Filter categories scrolling rail */}
@@ -224,6 +270,81 @@ export default function StockTab({
           })}
         </div>
       </div>
+
+      {/* AI Supply Chain Auditor Panel */}
+      {showAiAuditPanel && (
+        <div className="bg-white dark:bg-stone-900 border border-indigo-150 dark:border-stone-800 p-4 rounded-3xl shadow-sm text-left relative overflow-hidden transition-all duration-300">
+          <button
+            onClick={() => setShowAiAuditPanel(false)}
+            className="absolute top-4 right-4 text-gray-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          
+          <div className="flex items-center gap-2 mb-3">
+            <span className="p-1 px-2.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase tracking-widest">
+              Gemini AI Supply Chain Auditor
+            </span>
+          </div>
+
+          {isAuditingInventory ? (
+            <div className="py-6 text-center space-y-3">
+              <div className="w-6 h-6 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin mx-auto"></div>
+              <p className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 animate-pulse">
+                Analyzing spares stock levels, evaluating restock priorities, optimizing SKU values...
+              </p>
+            </div>
+          ) : aiAuditReport ? (
+            <div className="space-y-4">
+              {/* Critical Alerts */}
+              <div>
+                <span className="block text-[8px] font-black text-rose-500 uppercase tracking-widest mb-1.5">
+                  ⚠️ Understock & Risk Warnings
+                </span>
+                {aiAuditReport.criticalAlerts.length === 0 ? (
+                  <p className="text-[10px] text-gray-500">No critical alerts. Stock levels are healthy!</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {aiAuditReport.criticalAlerts.map((alert, i) => (
+                      <li key={i} className="text-[10px] text-gray-700 dark:text-stone-300 flex items-start gap-1">
+                        <span className="text-rose-500 font-extrabold text-[12px] leading-none select-none">•</span>
+                        <span>{alert}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* Restock Recommendations */}
+              <div>
+                <span className="block text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-1.5">
+                  🗳 Recommended Restocking Orders
+                </span>
+                <ul className="space-y-1">
+                  {aiAuditReport.restockRecommendations.map((rec, i) => (
+                    <li key={i} className="text-[10px] text-gray-700 dark:text-stone-300 flex items-start gap-1.5">
+                      <span className="text-emerald-500 font-extrabold">✓</span>
+                      <span>{rec}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Strategic Advice */}
+              <div className="p-3 bg-indigo-500/5 dark:bg-indigo-500/5 border border-indigo-500/10 rounded-2xl">
+                <span className="block text-[8px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">
+                  💡 Supply Chain Strategy Advice
+                </span>
+                <p className="text-[10px] text-gray-600 dark:text-stone-300 italic leading-relaxed">
+                  "{aiAuditReport.strategicAdvice}"
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[10px] text-gray-400">Failed to load optimization advice. Try again.</p>
+          )}
+        </div>
+      )}
 
       {/* Stock list items */}
       <div className="space-y-2.5">

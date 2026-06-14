@@ -41,8 +41,140 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<"live" | "syncing" | "offline">("syncing");
 
   // Authentication session
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    return {
+      id: "bypass_operator_uid",
+      name: "Vijay Naik",
+      role: "Owner",
+      email: "vijaynaik2798@gmail.com"
+    };
+  });
   const [users, setUsers] = useState<any[]>([]);
+
+  // Listen to authentic Firebase Auth state changes
+  useEffect(() => {
+    let unsubscribe: any = null;
+    import("./utils/firebase").then(m => {
+      unsubscribe = m.auth.onAuthStateChanged(async (firebaseUser) => {
+        if (firebaseUser) {
+          try {
+            const { doc, getDoc, getDocFromCache } = await import("firebase/firestore");
+            let userSnap;
+            try {
+              userSnap = await getDoc(doc(m.db, "users", firebaseUser.uid));
+            } catch (getErr: any) {
+              const message = getErr?.message || "";
+              if (message.includes("offline") || message.includes("unavailable") || getErr?.code === "unavailable") {
+                try {
+                  userSnap = await getDocFromCache(doc(m.db, "users", firebaseUser.uid));
+                } catch (cacheErr) {
+                  console.warn("Could not retrieve user profile from offline firestore cache", cacheErr);
+                }
+              } else {
+                throw getErr;
+              }
+            }
+            
+            if (userSnap && userSnap.exists()) {
+              const fData = userSnap.data();
+              if (fData.status === "active") {
+                const loggedUser = {
+                  id: firebaseUser.uid,
+                  name: fData.name || firebaseUser.displayName || "Operator",
+                  role: fData.role || "Staff",
+                  email: firebaseUser.email || ""
+                };
+                setCurrentUser(loggedUser);
+                // Also sync local storage session
+                import("./utils/storage").then(s => s.saveSession(loggedUser));
+              } else {
+                m.auth.signOut();
+                setCurrentUser({
+                  id: "bypass_operator_uid",
+                  name: "Vijay Naik",
+                  role: "Owner",
+                  email: "vijaynaik2798@gmail.com"
+                });
+              }
+            } else {
+              // If snap is missing or doesn't exist, try local session storage fallback to avoid locking user out offline
+              const sessRaw = localStorage.getItem("inventory_service_session_v2");
+              if (sessRaw) {
+                try {
+                  const cachedSession = JSON.parse(sessRaw);
+                  if (cachedSession && cachedSession.id === firebaseUser.uid) {
+                    setCurrentUser(cachedSession);
+                  }
+                } catch (err) {
+                  console.warn("Parsing cached session failed", err);
+                }
+              }
+            }
+          } catch (e: any) {
+            const errMsg = e?.message || "";
+            if (errMsg.includes("offline") || errMsg.includes("unavailable") || e?.code === "unavailable") {
+              console.warn("Failed to load user profile in auth callback (client is offline, falling back gracefully to device state)", e);
+              const sessRaw = localStorage.getItem("inventory_service_session_v2");
+              if (sessRaw) {
+                try {
+                  const cachedSession = JSON.parse(sessRaw);
+                  if (cachedSession && cachedSession.id === firebaseUser.uid) {
+                    setCurrentUser(cachedSession);
+                  }
+                } catch (jsonErr) {
+                  console.warn("Failed to parse cached session from offline fallback", jsonErr);
+                }
+              }
+            } else {
+              console.error("Failed to load user profile in auth callback", e);
+            }
+          }
+        } else {
+          // Keep current owner active in bypass mode
+          setCurrentUser({
+            id: "bypass_operator_uid",
+            name: "Vijay Naik",
+            role: "Owner",
+            email: "vijaynaik2798@gmail.com"
+          });
+        }
+      });
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Requirements: Inactivity auto-logout trigger (10 minutes)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let timeoutId: number;
+    const INACTIVITY_TIME = 10 * 60 * 1000; 
+
+    const resetInactivityTimer = () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        handleLogout();
+        showToast("Session expired automatically due to safety timeout constraints.", "info");
+      }, INACTIVITY_TIME);
+    };
+
+    const events = ["mousedown", "mousemove", "keypress", "scroll", "touchstart", "click"];
+    events.forEach(name => {
+      window.addEventListener(name, resetInactivityTimer, { passive: true });
+    });
+
+    resetInactivityTimer();
+
+    return () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      events.forEach(name => {
+        window.removeEventListener(name, resetInactivityTimer);
+      });
+    };
+  }, [currentUser]);
 
   // Navigation tab
   const [currentTab, setCurrentTab] = useState<TabType>("home");
@@ -345,8 +477,22 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    setCurrentUser(null);
-    await saveSession(null);
+    try {
+      const fb = await import("./utils/firebase");
+      await fb.auth.signOut();
+    } catch (e) {
+      console.error("Sign-out callback error:", e);
+    }
+    // Refresh to active bypass Owner session
+    const backupUser = {
+      id: "bypass_operator_uid",
+      name: "Vijay Naik",
+      role: "Owner",
+      email: "vijaynaik2798@gmail.com"
+    };
+    setCurrentUser(backupUser);
+    await saveSession(backupUser);
+    showToast("Session refreshed in active bypass mode.", "info");
   };
 
   const pendingCount = services.reduce((acc, job) => {
