@@ -42,12 +42,15 @@ export default function App() {
 
   // Authentication session
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    return {
-      id: "bypass_operator_uid",
-      name: "Vijay Naik",
-      role: "Owner",
-      email: "vijaynaik2798@gmail.com"
-    };
+    const rawVal = localStorage.getItem("inventory_service_session_v2");
+    if (rawVal) {
+      try {
+        return JSON.parse(rawVal);
+      } catch {
+        return null;
+      }
+    }
+    return null;
   });
   const [users, setUsers] = useState<any[]>([]);
 
@@ -89,12 +92,7 @@ export default function App() {
                 import("./utils/storage").then(s => s.saveSession(loggedUser));
               } else {
                 m.auth.signOut();
-                setCurrentUser({
-                  id: "bypass_operator_uid",
-                  name: "Vijay Naik",
-                  role: "Owner",
-                  email: "vijaynaik2798@gmail.com"
-                });
+                setCurrentUser(null);
               }
             } else {
               // If snap is missing or doesn't exist, try local session storage fallback to avoid locking user out offline
@@ -130,13 +128,11 @@ export default function App() {
             }
           }
         } else {
-          // Keep current owner active in bypass mode
-          setCurrentUser({
-            id: "bypass_operator_uid",
-            name: "Vijay Naik",
-            role: "Owner",
-            email: "vijaynaik2798@gmail.com"
-          });
+          // If no firebaseUser, check if there is an active local session before forcing null
+          const rawVal = localStorage.getItem("inventory_service_session_v2");
+          if (!rawVal) {
+            setCurrentUser(null);
+          }
         }
       });
     });
@@ -483,16 +479,9 @@ export default function App() {
     } catch (e) {
       console.error("Sign-out callback error:", e);
     }
-    // Refresh to active bypass Owner session
-    const backupUser = {
-      id: "bypass_operator_uid",
-      name: "Vijay Naik",
-      role: "Owner",
-      email: "vijaynaik2798@gmail.com"
-    };
-    setCurrentUser(backupUser);
-    await saveSession(backupUser);
-    showToast("Session refreshed in active bypass mode.", "info");
+    setCurrentUser(null);
+    await saveSession(null);
+    showToast("Successfully logged out.", "success");
   };
 
   const pendingCount = services.reduce((acc, job) => {
@@ -531,7 +520,7 @@ export default function App() {
           <div className="flex-1 flex flex-col select-none overflow-y-auto">
             {/* Simple logo header for the auth page */}
             <div className="px-4 py-4 border-b border-gray-100 dark:border-stone-850/40 sticky top-0 bg-white/95 dark:bg-stone-950 backdrop-blur-md flex justify-between items-center z-10">
-              <span className="text-xs font-bold tracking-tight text-gray-500">Inventory Service Suite</span>
+              <span className="text-xs font-bold tracking-tight text-indigo-650 dark:text-indigo-400 font-sans uppercase">Stockivo Suite</span>
               <button 
                 onClick={() => setDark(!dark)}
                 className="p-1 px-1.5 rounded-lg border border-gray-100 text-gray-400 text-xs font-bold"

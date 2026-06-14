@@ -14,7 +14,11 @@ import {
   ClipboardList,
   Filter,
   X,
-  FileCheck
+  FileCheck,
+  Share2,
+  Download,
+  Calendar,
+  FileSpreadsheet
 } from "lucide-react";
 import { formatDateTime, generateQRUrl } from "../utils/helpers";
 
@@ -60,6 +64,221 @@ export default function StockTab({
     strategicAdvice: string;
   } | null>(null);
   const [showAiAuditPanel, setShowAiAuditPanel] = useState(false);
+
+  // Excel Sharing & Report states
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [reportType, setReportType] = useState<"ledger" | "catalog">("ledger");
+  const [dateMode, setDateMode] = useState<"single" | "range">("range");
+  
+  const todayYMD = useMemo(() => new Date().toISOString().substring(0, 10), []);
+  const [singleDate, setSingleDate] = useState(todayYMD);
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().substring(0, 10);
+  });
+  const [endDate, setEndDate] = useState(todayYMD);
+
+  // Compute matched items count dynamically
+  const matchingCount = useMemo(() => {
+    let count = 0;
+    if (reportType === "ledger") {
+      inventory.forEach(item => {
+        (item.history || []).forEach(log => {
+          const logDate = log.timestamp ? log.timestamp.substring(0, 10) : "";
+          if (dateMode === "single") {
+            if (logDate === singleDate) count++;
+          } else {
+            if (logDate >= startDate && logDate <= endDate) count++;
+          }
+        });
+      });
+    } else {
+      inventory.forEach(item => {
+        const itemDate = item.createdAt ? item.createdAt.substring(0, 10) : "";
+        if (dateMode === "single") {
+          if (itemDate === singleDate) count++;
+        } else {
+          if (itemDate >= startDate && itemDate <= endDate) count++;
+        }
+      });
+    }
+    return count;
+  }, [inventory, reportType, dateMode, singleDate, startDate, endDate]);
+
+  const generateCSVData = () => {
+    const isLedger = reportType === "ledger";
+    const rows: string[][] = [];
+    
+    if (isLedger) {
+      rows.push([
+        "Transaction Date", 
+        "Transaction Time", 
+        "Item ID", 
+        "Category", 
+        "Brand", 
+        "Product Name", 
+        "Model No", 
+        "Serial No", 
+        "Type (In/Out)", 
+        "Quantity Change", 
+        "Logged By", 
+        "Notes"
+      ]);
+      
+      inventory.forEach(item => {
+        (item.history || []).forEach(log => {
+          const logDate = log.timestamp ? log.timestamp.substring(0, 10) : "";
+          const logTime = log.timestamp ? log.timestamp.substring(11, 19) : "";
+          
+          let match = false;
+          if (dateMode === "single") {
+            match = logDate === singleDate;
+          } else {
+            match = logDate >= startDate && logDate <= endDate;
+          }
+          
+          if (match) {
+            rows.push([
+              logDate,
+              logTime,
+              item.id,
+              item.category,
+              item.brand,
+              item.productName,
+              item.modelNo,
+              item.serialNo,
+              log.type,
+              log.quantity.toString(),
+              log.user,
+              log.notes
+            ]);
+          }
+        });
+      });
+    } else {
+      rows.push([
+        "Created Date", 
+        "Item ID", 
+        "Category", 
+        "Brand", 
+        "Product Name", 
+        "Model No", 
+        "Serial No", 
+        "Stock Balance", 
+        "Alert Threshold", 
+        "Status Level", 
+        "Spot Location"
+      ]);
+      
+      inventory.forEach(item => {
+        const itemDate = item.createdAt ? item.createdAt.substring(0, 10) : "";
+        
+        let match = false;
+        if (dateMode === "single") {
+          match = itemDate === singleDate;
+        } else {
+          match = itemDate >= startDate && itemDate <= endDate;
+        }
+        
+        if (match) {
+          const isLow = item.quantity < item.minQuantity;
+          const statusLevel = isLow ? "LOW STOCK" : "ADEQUATE";
+          rows.push([
+            itemDate,
+            item.id,
+            item.category,
+            item.brand,
+            item.productName,
+            item.modelNo,
+            item.serialNo,
+            item.quantity.toString(),
+            item.minQuantity.toString(),
+            statusLevel,
+            item.location
+          ]);
+        }
+      });
+    }
+    
+    // Convert to Excel-compatible CSV with UTF-8 BOM
+    const csvContent = "\uFEFF" + rows.map(e => e.map(cell => {
+      const cleanVal = (cell || '').toString().replace(/"/g, '""');
+      return `"${cleanVal}"`;
+    }).join(",")).join("\n");
+    
+    return csvContent;
+  };
+
+  const handleDownloadExcel = () => {
+    if (matchingCount === 0) {
+      showToast("No stock records found for selected date scope!", "error");
+      return;
+    }
+    try {
+      const csv = generateCSVData();
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const filename = `Stockivo_${reportType === "ledger" ? "LedgerLogs" : "StockSheet"}_${
+        dateMode === "single" ? singleDate : `${startDate}_to_${endDate}`
+      }.csv`;
+      
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      showToast(`Excel compatible download trigger for ${matchingCount} records!`, "success");
+    } catch (err: any) {
+      showToast("Download failed: " + err.message, "error");
+    }
+  };
+
+  const handleShareReport = async () => {
+    if (matchingCount === 0) {
+      showToast("No stock records found to share!", "error");
+      return;
+    }
+    
+    const csv = generateCSVData();
+    const filename = `Stockivo_${reportType === "ledger" ? "Ledger" : "Stock"}_${
+      dateMode === "single" ? singleDate : `${startDate}_to_${endDate}`
+    }.csv`;
+    
+    let sharedSuccessfully = false;
+
+    if (navigator.share) {
+      try {
+        const file = new File([csv], filename, { type: "text/csv;charset=utf-8;" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: `Stockivo Excel Stock Report`,
+            text: `Export of ${matchingCount} stock records (${dateMode === 'single' ? singleDate : 'day-to-day'}).`
+          });
+          showToast("Report spreadsheet shared successfully!", "success");
+          sharedSuccessfully = true;
+          return;
+        }
+      } catch (err: any) {
+        if (err.name === "AbortError") {
+          return;
+        }
+        // Silently swallow browser-level permission/sandbox restrictions to enable fallback gracefully
+      }
+    }
+    
+    if (!sharedSuccessfully) {
+      try {
+        await navigator.clipboard.writeText(csv);
+        showToast("Web Share restricted in preview. Copied CSV data to clipboard instead!", "success");
+      } catch (err: any) {
+        showToast("Please use 'Download Excel Sheet' button to save the report directly!", "info");
+      }
+    }
+  };
 
   const handleRunInventoryAudit = async () => {
     setIsAuditingInventory(true);
@@ -246,6 +465,15 @@ export default function StockTab({
             id="btn-stock-ai-audit"
           >
             <span>✨ AI Audit</span>
+          </button>
+
+          <button
+            onClick={() => setShowExportModal(true)}
+            className="bg-[#0f172a] dark:bg-stone-800 hover:bg-slate-900 dark:hover:bg-stone-700 active:scale-95 text-white font-black p-2.5 rounded-xl flex items-center gap-1 text-xs cursor-pointer shadow-sm transition-all whitespace-nowrap"
+            id="btn-stock-excel"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>📊 Excel Report</span>
           </button>
         </div>
 
@@ -833,6 +1061,235 @@ export default function StockTab({
         title="Scan Model/Serial identifier"
         placeholder="Or type model number, brand, S/N..."
       />
+
+      {/* Excel Export and Share Central Dialog UI */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 select-none">
+          <div className="bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 rounded-3xl max-w-sm w-full p-5 shadow-2xl relative space-y-4 text-left animate-slide-up">
+            
+            {/* Modal close */}
+            <button
+              onClick={() => setShowExportModal(false)}
+              className="absolute top-4.5 right-4.5 text-gray-400 hover:text-stone-700 dark:hover:text-stone-250 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Title block */}
+            <div>
+              <span className="p-1 px-2.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[8.5px] font-black uppercase tracking-widest whitespace-nowrap">
+                📊 Excel Generation Desk
+              </span>
+              <h3 className="text-sm font-black text-gray-900 dark:text-white mt-1.5 uppercase font-sans tracking-tight">
+                Share Stock Excel Report
+              </h3>
+            </div>
+
+            {/* Report Type selector: Logs movement vs static lists */}
+            <div className="space-y-1">
+              <span className="block text-[8px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-widest">
+                1. Select Report format
+              </span>
+              <div className="grid grid-cols-2 gap-1.5 bg-slate-100 dark:bg-stone-950 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setReportType("ledger")}
+                  className={`py-2 px-1 text-[10px] font-black rounded-lg uppercase tracking-wider transition-all select-none cursor-pointer ${
+                    reportType === "ledger"
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "text-gray-500 dark:text-stone-400 hover:text-gray-800"
+                  }`}
+                >
+                  Movements Ledger
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReportType("catalog")}
+                  className={`py-2 px-1 text-[10px] font-black rounded-lg uppercase tracking-wider transition-all select-none cursor-pointer ${
+                    reportType === "catalog"
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "text-gray-500 dark:text-stone-400 hover:text-gray-800"
+                  }`}
+                >
+                  Catalog Stocks
+                </button>
+              </div>
+              <p className="text-[9px] text-gray-400 dark:text-stone-500 italic px-0.5 leading-tight">
+                {reportType === "ledger" 
+                  ? "Exports logged In/Out transactions with reasons, operators & times."
+                  : "Exports static available spares catalog lists and alert status."
+                }
+              </p>
+            </div>
+
+            {/* Date Picker Mode: By day or Day-to-Day */}
+            <div className="space-y-1.5">
+              <span className="block text-[8px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-widest">
+                2. Specify Period Option
+              </span>
+              <div className="grid grid-cols-2 gap-1.5 bg-slate-100 dark:bg-stone-950 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setDateMode("single")}
+                  className={`py-1.5 text-[9.5px] font-black rounded-lg uppercase tracking-wider transition-all select-none cursor-pointer ${
+                    dateMode === "single"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "text-gray-500 dark:text-stone-400 hover:text-gray-800"
+                  }`}
+                >
+                  By single Day
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDateMode("range")}
+                  className={`py-1.5 text-[9.5px] font-black rounded-lg uppercase tracking-wider transition-all select-none cursor-pointer ${
+                    dateMode === "range"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "text-gray-500 dark:text-stone-400 hover:text-gray-800"
+                  }`}
+                >
+                  Day To Day Range
+                </button>
+              </div>
+            </div>
+
+            {/* Inputs based on selection */}
+            <div className="bg-slate-50 dark:bg-stone-950 p-3 rounded-2xl border border-slate-105 dark:border-stone-850/40 space-y-2.5">
+              {dateMode === "single" ? (
+                <div>
+                  <label className="block text-[8px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-widest mb-1">
+                    Select target day:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="date"
+                      value={singleDate}
+                      onChange={e => setSingleDate(e.target.value)}
+                      className="w-full text-xs font-mono bg-white dark:bg-stone-900 border border-slate-205 dark:border-stone-800 rounded-xl px-2.5 py-2 focus:outline-none focus:border-indigo-500 text-gray-800 dark:text-stone-200"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[8px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-widest mb-1">
+                        Start Day:
+                      </label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={e => setStartDate(e.target.value)}
+                        className="w-full text-xs font-mono bg-white dark:bg-stone-900 border border-slate-205 dark:border-stone-800 rounded-xl px-2 py-1.5 focus:outline-none focus:border-indigo-500 text-gray-800 dark:text-stone-200"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[8px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-widest mb-1">
+                        End Day:
+                      </label>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={e => setEndDate(e.target.value)}
+                        className="w-full text-xs font-mono bg-white dark:bg-stone-900 border border-slate-205 dark:border-stone-800 rounded-xl px-2 py-1.5 focus:outline-none text-gray-800 dark:text-stone-200"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Preset Buttons for day ranges */}
+                  <div className="flex gap-1 overflow-x-auto select-none no-scrollbar pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const d = new Date();
+                        setStartDate(d.toISOString().substring(0, 10));
+                        setEndDate(d.toISOString().substring(0, 10));
+                      }}
+                      className="bg-white dark:bg-stone-900 text-gray-600 dark:text-stone-300 border border-slate-200 dark:border-stone-800 text-[8px] font-black px-2 py-1 rounded-lg uppercase whitespace-nowrap cursor-pointer hover:bg-slate-50"
+                    >
+                      Today Only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const d = new Date();
+                        d.setDate(d.getDate() - 1);
+                        const yesStr = d.toISOString().substring(0, 10);
+                        setStartDate(yesStr);
+                        setEndDate(yesStr);
+                      }}
+                      className="bg-white dark:bg-stone-900 text-gray-600 dark:text-stone-300 border border-slate-200 dark:border-stone-800 text-[8px] font-black px-2 py-1 rounded-lg uppercase whitespace-nowrap cursor-pointer hover:bg-slate-50"
+                    >
+                      Yesterday
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const d = new Date();
+                        d.setDate(d.getDate() - 7);
+                        setStartDate(d.toISOString().substring(0, 10));
+                        setEndDate(new Date().toISOString().substring(0, 10));
+                      }}
+                      className="bg-white dark:bg-stone-900 text-gray-600 dark:text-stone-300 border border-slate-200 dark:border-stone-800 text-[8px] font-black px-2 py-1 rounded-lg uppercase whitespace-nowrap cursor-pointer hover:bg-slate-50"
+                    >
+                      Last 7 Days
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const d = new Date();
+                        setStartDate(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-01");
+                        setEndDate(new Date().toISOString().substring(0, 10));
+                      }}
+                      className="bg-white dark:bg-stone-900 text-gray-600 dark:text-stone-300 border border-slate-200 dark:border-stone-800 text-[8px] font-black px-2 py-1 rounded-lg uppercase whitespace-nowrap cursor-pointer hover:bg-slate-50"
+                    >
+                      This Month
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Dynamic Status Counter */}
+            <div className={`p-2.5 rounded-2xl flex items-center justify-between text-xs font-black ${
+              matchingCount > 0 
+                ? "bg-emerald-500/5 border border-emerald-500/10 text-emerald-800 dark:text-emerald-400"
+                : "bg-red-500/5 border border-red-500/10 text-rose-600 dark:text-rose-400"
+            }`}>
+              <div className="flex items-center gap-1.5 uppercase tracking-wide text-[9.5px]">
+                <FileSpreadsheet className="w-4 h-4 shrink-0" />
+                <span>Computed match records:</span>
+              </div>
+              <span className="font-mono text-xs font-black px-2.5 py-0.5 rounded-full bg-black/5 dark:bg-white/10">
+                {matchingCount} items
+              </span>
+            </div>
+
+            {/* Actions for output downloads and shares */}
+            <div className="space-y-1.5 select-none pt-1">
+              <button
+                type="button"
+                onClick={handleDownloadExcel}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-[10px] uppercase tracking-wider py-3 rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-97 transition-all cursor-pointer"
+                disabled={matchingCount === 0}
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download Excel Sheet</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleShareReport}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-[10px] uppercase tracking-wider py-3 rounded-xl flex items-center justify-center gap-1.5 shadow-xs active:scale-97 transition-all cursor-pointer"
+                disabled={matchingCount === 0}
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Share Excel Sheet</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

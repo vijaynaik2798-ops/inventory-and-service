@@ -13,7 +13,8 @@ import {
   Eye, 
   EyeOff, 
   ShieldAlert, 
-  ArrowLeft 
+  ArrowLeft,
+  Layers
 } from "lucide-react";
 import { 
   registerNewOperator, 
@@ -255,15 +256,16 @@ export default function AuthScreen({
     <div className="flex-1 flex flex-col justify-center px-4 sm:px-6 py-8 bg-slate-50 dark:bg-stone-950 transition-colors duration-200 select-none">
       
       {/* App Header branding */}
-      <div className="w-full text-center mb-6">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-blue-600 text-white font-black text-xl shadow-xl border-4 border-white dark:border-stone-900 mb-2.5">
-          INV
+      <div className="w-full text-center mb-6 flex flex-col items-center justify-center">
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#6366f1] to-indigo-600 text-white font-black shadow-xl mb-3 border-4 border-white dark:border-stone-900 shadow-indigo-500/20">
+          <Layers className="w-7 h-7" />
         </div>
-        <h2 className="text-xl font-black text-gray-800 dark:text-stone-100 tracking-tight">
-          System Authentication Gate
+        <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight flex flex-col items-center">
+          <span className="text-indigo-600 dark:text-indigo-400 font-black text-2xl tracking-tighter leading-none font-sans">STOCKIVO</span>
+          <span className="text-[8px] font-black tracking-widest text-slate-400 dark:text-stone-550 uppercase mt-1 font-mono">INTELLIGENCE SUITE</span>
         </h2>
-        <p className="text-[10px] text-gray-500 dark:text-stone-400 font-extrabold max-w-[280px] mx-auto mt-0.5 uppercase tracking-wider">
-          Enterprise Security Dashboard
+        <p className="text-[9px] text-gray-400 dark:text-stone-500 font-extrabold max-w-[280px] mx-auto mt-2 uppercase tracking-widest">
+          SECURITY & INFRASTRUCTURE GATEWAY
         </p>
       </div>
 
@@ -604,6 +606,7 @@ export default function AuthScreen({
             </span>
             <div className="grid grid-cols-2 gap-2">
               <button
+                type="button"
                 onClick={handleGoogleSignInAttempt}
                 disabled={isLoading}
                 className="flex items-center justify-center gap-1.5 py-2 text-[10px] font-black block border border-gray-200 dark:border-stone-800 rounded-xl text-gray-700 dark:text-stone-200 hover:bg-slate-50 dark:hover:bg-stone-850 cursor-pointer text-center"
@@ -611,11 +614,54 @@ export default function AuthScreen({
                 Google SSO
               </button>
               <button
+                type="button"
                 onClick={handleAppleSignInAttempt}
                 disabled={isLoading}
                 className="flex items-center justify-center gap-1.5 py-2 text-[10px] font-black block border border-gray-200 dark:border-stone-800 rounded-xl text-gray-700 dark:text-stone-200 hover:bg-slate-50 dark:hover:bg-stone-850 cursor-pointer text-center"
               >
                 Apple ID
+              </button>
+            </div>
+          </div>
+
+          {/* Demo / Sandbox Quick Access bypass option */}
+          <div className="mt-4 pt-3.5 border-t border-dashed border-indigo-150 dark:border-stone-800 space-y-2 select-none">
+            <span className="block text-[8px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-widest text-center">
+              ⚡ Sandbox Demo Quick Access
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onLoginSuccess({
+                    id: "bypass_operator_uid",
+                    name: "Vijay Naik",
+                    role: "Owner",
+                    email: "vijaynaik2798@gmail.com"
+                  });
+                  showToast("Welcome back, Vijay! (Bypass Mode)", "success");
+                }}
+                className="flex flex-col items-center justify-center p-2 border border-dashed border-indigo-200/50 dark:border-stone-800 rounded-xl bg-indigo-500/5 hover:bg-indigo-500/10 dark:hover:bg-stone-850 cursor-pointer text-center group transition-all"
+              >
+                <span className="text-[10px] font-black text-indigo-650 dark:text-indigo-400 group-hover:text-indigo-700">Vijay Naik</span>
+                <span className="text-[7.5px] font-black text-gray-400 dark:text-stone-550 uppercase tracking-wider block mt-0.5">Owner Access</span>
+              </button>
+              <button
+                type="button"
+                focused-id="bypass-demo-tech"
+                onClick={() => {
+                  onLoginSuccess({
+                    id: "bypass_tech_uid_1",
+                    name: "Anand Kumar",
+                    role: "Technician",
+                    email: "anand@invservice.com"
+                  });
+                  showToast("Welcome back, Anand! (Bypass Mode)", "success");
+                }}
+                className="flex flex-col items-center justify-center p-2 border border-dashed border-indigo-200/50 dark:border-stone-800 rounded-xl bg-indigo-500/5 hover:bg-indigo-500/10 dark:hover:bg-stone-850 cursor-pointer text-center group transition-all"
+              >
+                <span className="text-[10px] font-black text-indigo-650 dark:text-indigo-400 group-hover:text-indigo-700">Anand Kumar</span>
+                <span className="text-[7.5px] font-black text-gray-400 dark:text-stone-550 uppercase tracking-wider block mt-0.5">Tech Access</span>
               </button>
             </div>
           </div>
