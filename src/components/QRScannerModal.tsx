@@ -41,6 +41,13 @@ export default function QRScannerModal({
 
   const getMockPresetsForContext = () => {
     const t = title.toLowerCase();
+    if (t.includes("pair") || t.includes("link") || t.includes("device")) {
+      return [
+        { label: "Pair Chrome - macOS (Corporate HQ)", code: "STOCKIVO-LINK:BROWSER_CHROME_MAC" },
+        { label: "Pair Safari - iPad Pro (Chennai Shop Front)", code: "STOCKIVO-LINK:TABLET_SAFARI_FRONT" },
+        { label: "Pair Firefox - Linux (CCTV Monitor Terminal)", code: "STOCKIVO-LINK:MONITOR_FIREFOX_TERM" }
+      ];
+    }
     if (t.includes("customer")) {
       return [
         { label: "Ramesh Naik (CUST-101)", code: "INVSRV-CUSTOMER:CUST-101" },
