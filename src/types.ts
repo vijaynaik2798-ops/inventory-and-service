@@ -124,6 +124,10 @@ export interface InventoryItem {
   quantity: number;
   minQuantity: number; // e.g., default 5 for alerts
   location: string;
+  purchaseDate?: string;
+  supplier?: string;
+  status?: string;
+  notes?: string;
   history: {
     type: "In" | "Out";
     quantity: number;

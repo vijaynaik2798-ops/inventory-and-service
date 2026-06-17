@@ -322,6 +322,10 @@ export default function StockTab({
   const [addQty, setAddQty] = useState(10);
   const [addMinQty, setAddMinQty] = useState(5);
   const [addLoc, setAddLoc] = useState("Store Room");
+  const [addPurchaseDate, setAddPurchaseDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [addSupplier, setAddSupplier] = useState("Siddhivinayak Spares India");
+  const [addStatus, setAddStatus] = useState("In Stock");
+  const [addNotes, setAddNotes] = useState("");
 
   // Adjust Stock Fields
   const [adjType, setAdjType] = useState<"In" | "Out">("In");
@@ -363,7 +367,11 @@ export default function StockTab({
       serialNo: addSerial,
       quantity: Number(addQty),
       minQuantity: Number(addMinQty),
-      location: addLoc
+      location: addLoc,
+      purchaseDate: addPurchaseDate,
+      supplier: addSupplier,
+      status: addStatus,
+      notes: addNotes
     });
 
     // Reset Form
@@ -375,6 +383,10 @@ export default function StockTab({
     setAddQty(10);
     setAddMinQty(5);
     setAddLoc("Store Room");
+    setAddPurchaseDate(new Date().toISOString().substring(0, 10));
+    setAddSupplier("Siddhivinayak Spares India");
+    setAddStatus("In Stock");
+    setAddNotes("");
     setShowAddModal(false);
   };
 
@@ -754,6 +766,38 @@ export default function StockTab({
                   <span className="text-gray-400">Primary spot:</span>
                   <span className="text-orange-500 font-extrabold">📍 {selectedStockItem.location}</span>
                 </div>
+
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Purchase Date:</span>
+                  <span className="text-gray-800 dark:text-stone-200">{selectedStockItem.purchaseDate || "N/A"}</span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Supplier:</span>
+                  <span className="text-gray-800 dark:text-stone-200">{selectedStockItem.supplier || "N/A"}</span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Current Status:</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                    selectedStockItem.status === "Damaged"
+                      ? "bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400"
+                      : selectedStockItem.status === "Out of Stock"
+                      ? "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400"
+                      : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400"
+                  }`}>
+                    {selectedStockItem.status || "In Stock"}
+                  </span>
+                </div>
+
+                {selectedStockItem.notes && (
+                  <div className="pt-2 border-t border-gray-100 dark:border-stone-850">
+                    <span className="text-gray-400 block text-[10px] uppercase tracking-wider mb-0.5">Notes:</span>
+                    <p className="text-[11px] text-gray-650 dark:text-stone-350 italic font-medium leading-relaxed">
+                      {selectedStockItem.notes}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* In/Out History list logs */}
@@ -944,6 +988,65 @@ export default function StockTab({
                     className="w-full text-xs bg-slate-50 dark:bg-stone-800 border border-gray-200 rounded-xl px-3 py-2.5"
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5">
+                    Purchase Date *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={addPurchaseDate}
+                    onChange={e => setAddPurchaseDate(e.target.value)}
+                    className="w-full text-xs bg-slate-50 dark:bg-stone-800 border border-gray-200 text-gray-800 dark:text-stone-100 rounded-xl px-3 py-2.5 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5">
+                    Supplier Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Siddhivinayak Spares India"
+                    value={addSupplier}
+                    onChange={e => setAddSupplier(e.target.value)}
+                    className="w-full text-xs bg-slate-50 dark:bg-stone-800 border border-gray-200 text-gray-800 dark:text-stone-100 rounded-xl px-3 py-2.5 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2">
+                <div>
+                  <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5">
+                    Current Status *
+                  </label>
+                  <select
+                    value={addStatus}
+                    onChange={e => setAddStatus(e.target.value)}
+                    className="w-full text-xs bg-slate-50 dark:bg-stone-800 border border-gray-200 text-gray-800 dark:text-stone-100 rounded-xl px-2.5 py-3"
+                  >
+                    <option value="In Stock">In Stock</option>
+                    <option value="Out of Stock">Out of Stock</option>
+                    <option value="Damaged">Damaged</option>
+                    <option value="In Service / Repairing">In Service / Repairing</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5">
+                  Additional Notes
+                </label>
+                <textarea
+                  placeholder="e.g. Bulk lot imported with 1-year local warranty."
+                  value={addNotes}
+                  onChange={e => setAddNotes(e.target.value)}
+                  className="w-full text-xs bg-slate-50 dark:bg-stone-800 border border-gray-200 text-gray-800 dark:text-stone-100 rounded-xl px-3 py-2.5 focus:outline-none h-16 resize-none"
+                />
               </div>
 
               <button

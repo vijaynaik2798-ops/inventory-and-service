@@ -109,10 +109,10 @@ export default function QRScannerModal({
       })
       .catch((err) => {
         if (stopped) return;
-        console.error("Camera access failed:", err);
+        console.warn("Camera access failed gracefully in sandbox:", err);
         setHasPermission(false);
         setIsInitializing(false);
-        setScanError("Camera access permission denied. Switch to manual entry or check site permissions.");
+        setScanError(`Camera access unavailable: ${err.message || err}. Use simulated inputs instead.`);
       });
 
     return () => {
@@ -176,7 +176,7 @@ export default function QRScannerModal({
     return () => {
       if (qrCodeInstanceRef.current && qrCodeInstanceRef.current.isScanning) {
         qrCodeInstanceRef.current.stop()
-          .catch((err) => console.error("Error stopping qr scanner:", err));
+          .catch((err) => console.warn("Error stopping qr scanner gracefully:", err));
       }
     };
   }, [isOpen, isInitializing, activeCameraId, facingMode]);

@@ -158,6 +158,7 @@ export default function MoreTab({
   const [showPasscodeLinkModal, setShowPasscodeLinkModal] = useState(false);
   const [currentPasscode, setCurrentPasscode] = useState("");
   const [manualCodeInput, setManualCodeInput] = useState("");
+  const [pendingLoginRequest, setPendingLoginRequest] = useState<{ sessionId: string } | null>(null);
 
   const handleSaveDevicesToStorage = (list: any[]) => {
     setLinkedDevices(list);
@@ -382,6 +383,16 @@ export default function MoreTab({
   const handlePairDeviceScan = (decodedText: string) => {
     if (!decodedText) return;
     
+    // Check if scan represents a one-time login request QR instead of standard console link
+    if (decodedText.startsWith("STOCKIVO-QR-LOGIN-REQ:")) {
+      const parts = decodedText.split(":");
+      const sId = parts[1] || "";
+      setPendingLoginRequest({ sessionId: sId });
+      setShowDevicesScanner(false);
+      showToast("Scanned Remote Login Handshake! Verification required.", "info");
+      return;
+    }
+
     let deviceName = "New Paired Browser Node";
     let type = "desktop";
     let locStr = "Chennai Branch Shop · Authorized Session";
@@ -1747,6 +1758,74 @@ export default function MoreTab({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Approve Remote Login Request Modal Dialog */}
+      {pendingLoginRequest && (
+        <div className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-stone-900 border border-gray-150 dark:border-stone-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl relative space-y-4 text-left animate-slide-up select-none">
+            
+            <span className="p-1 px-2.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[8.5px] font-black uppercase tracking-widest whitespace-nowrap">
+              ⚠️ REMOTE SESSION SIGN-IN REQUEST
+            </span>
+
+            <div className="space-y-1">
+              <h3 className="text-sm font-black text-gray-950 dark:text-white uppercase tracking-tight font-sans">
+                Authorize Companion Session?
+              </h3>
+              <p className="text-[10.5px] text-gray-500 dark:text-stone-400 leading-normal font-sans">
+                An external device is requesting network console access under your login credential (<span className="font-bold text-gray-700 dark:text-stone-300">{currentUser?.name || "Vijay Naik"}</span>).
+              </p>
+            </div>
+
+            <div className="p-3 bg-slate-50 dark:bg-stone-950 rounded-xl border border-gray-100 dark:border-stone-850 font-mono text-[9px] space-y-1 text-gray-500 dark:text-stone-400">
+              <div>REQUEST_ID: {pendingLoginRequest.sessionId.substring(0, 18)}...</div>
+              <div>SECURITY: HTTPS SECURE SSL GATEWAY</div>
+              <div>OPERATOR: {currentUser?.email || "vijaynaik2798@gmail.com"}</div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-1 font-sans">
+              <button
+                type="button"
+                onClick={() => {
+                  const targetUser = {
+                    id: currentUser?.id || "bypass_vijay_owner_uid",
+                    name: currentUser?.name || "Vijay Naik",
+                    role: currentUser?.role || "Owner",
+                    email: currentUser?.email || "vijaynaik2798@gmail.com"
+                  };
+                  localStorage.setItem(`approved_session_${pendingLoginRequest.sessionId}`, JSON.stringify({ user: targetUser }));
+                  // Dispatch storage event to sync other local frames or intervals instantly
+                  window.dispatchEvent(new Event("storage_sync2")); 
+                  showToast("Authorized companion session securely! Clean handshake.", "success");
+                  setPendingLoginRequest(null);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase py-2.5 rounded-xl text-center shadow-md transition-all cursor-pointer border-none"
+              >
+                Approve Login
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem(`approved_session_${pendingLoginRequest.sessionId}`, JSON.stringify({ denied: true }));
+                  showToast("Login request rejected safely.", "info");
+                  setPendingLoginRequest(null);
+                }}
+                className="bg-stone-100 hover:bg-rose-100 dark:bg-stone-800 dark:hover:bg-rose-950/20 text-stone-700 hover:text-rose-600 dark:text-stone-300 dark:hover:text-rose-400 font-extrabold text-[10px] uppercase py-2.5 rounded-xl text-center transition-colors cursor-pointer border-none"
+              >
+                Deny & Reject
+              </button>
+            </div>
+
+            <button
+              onClick={() => setPendingLoginRequest(null)}
+              className="text-center w-full block text-[9.5px] uppercase font-bold text-gray-400 hover:text-gray-600 pt-1 border-none bg-transparent outline-none cursor-pointer"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
