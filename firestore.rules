@@ -180,5 +180,10 @@ service cloud.firestore {
       allow read: if isStaff();
       allow update, delete: if false; // Logs are strictly append-only, fully immutable
     }
+
+    // 9. Key-value store (configurations, backend general app state, settings)
+    match /kv_store/{key} {
+      allow read, write: if true;
+    }
   }
 }

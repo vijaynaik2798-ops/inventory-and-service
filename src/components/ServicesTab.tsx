@@ -10,7 +10,9 @@ import {
   AccessoryKey,
   ReplacementLog,
   PaymentStatus,
-  PaymentMethod
+  PaymentMethod,
+  SubscriptionDetail,
+  PLAN_LIMITS
 } from "../types";
 import {
   Search,
@@ -34,7 +36,9 @@ import {
   Barcode,
   Save,
   MessageSquare,
-  BadgeAlert
+  BadgeAlert,
+  Building,
+  CreditCard
 } from "lucide-react";
 import {
   formatCurrency,
@@ -51,8 +55,10 @@ interface ServicesTabProps {
   customers: Customer[];
   technicians: Staff[];
   locations: string[];
+  paymentMethods?: string[];
   waTemplates: WhatsAppTemplate[];
   currentUser: any;
+  subscription?: SubscriptionDetail;
   onAddJob: (job: ServiceJob) => void;
   onUpdateJob: (job: ServiceJob) => void;
   onAddCustomLocation: (loc: string) => void;
@@ -65,8 +71,10 @@ export default function ServicesTab({
   customers,
   technicians,
   locations,
+  paymentMethods = [],
   waTemplates,
   currentUser,
+  subscription,
   onAddJob,
   onUpdateJob,
   onAddCustomLocation,
@@ -95,6 +103,29 @@ export default function ServicesTab({
   useEffect(() => {
     setAiDiagnosticData(null);
   }, [selectedItem?.id]);
+
+  const [merchantDetails, setMerchantDetails] = useState<any>(null);
+
+  useEffect(() => {
+    const loadMerchant = () => {
+      try {
+        const raw = localStorage.getItem("merchant_payout_details");
+        if (raw) {
+          setMerchantDetails(JSON.parse(raw));
+        } else {
+          setMerchantDetails(null);
+        }
+      } catch (err) {}
+    };
+    loadMerchant();
+    
+    window.addEventListener("storage_sync", loadMerchant);
+    window.addEventListener("storage", loadMerchant);
+    return () => {
+      window.removeEventListener("storage_sync", loadMerchant);
+      window.removeEventListener("storage", loadMerchant);
+    };
+  }, []);
 
   const handleRunAIDiagnosis = async () => {
     if (!selectedItem) return;
@@ -183,7 +214,7 @@ export default function ServicesTab({
   // Individual Form builders for adding a single item inside the new job
   const [tempProdName, setTempProdName] = useState("");
   const [tempBrand, setTempBrand] = useState("");
-  const [tempCategory, setTempCategory] = useState("CCTV Camera");
+  const [tempCategory, setTempCategory] = useState("Hardware Component");
   const [tempModelNo, setTempModelNo] = useState("");
   const [tempSerialNo, setTempSerialNo] = useState("");
   const [tempCondition, setTempCondition] = useState("");
@@ -267,7 +298,7 @@ export default function ServicesTab({
   const scannerInputRef = useRef<HTMLInputElement>(null);
 
   // Helper categories
-  const categoriesList = ["CCTV IP Camera", "CCTV Dome Camera", "CCTV Bullet Camera", "DVR Receiver", "NVR Receiver", "PoE Switch", "Power Supply", "Storage Disk", "WiFi Router", "Networking Switch", "Smart Door Lock", "Electronics Board", "Other Security"];
+  const categoriesList = ["Hardware Component", "Spares Kit", "Motherboard", "Receiver Unit", "Controller Module", "PoE Network Switch", "Power Supply Unit", "Storage Drive", "Router & AP", "Networking Switch", "Security Lock", "Custom Circuit Board", "General Electronics"];
 
   // Filter service jobs
   const filteredJobs = useMemo(() => {
@@ -395,7 +426,7 @@ export default function ServicesTab({
     // Clear item inputs for next device
     setTempProdName("");
     setTempBrand("");
-    setTempCategory("CCTV IP Camera");
+    setTempCategory("Hardware Component");
     setTempModelNo("");
     setTempSerialNo("");
     setTempCondition("");
@@ -442,6 +473,15 @@ export default function ServicesTab({
     if (newJobItems.length === 0) {
       showToast("Add at least 1 device to compiled job details", "error");
       return;
+    }
+
+    if (subscription) {
+      const activePlan = subscription.plan;
+      const ticketLimit = PLAN_LIMITS[activePlan].services;
+      if (services.length >= ticketLimit) {
+        showToast(`Ticket limit hit! Your '${activePlan}' plan is capped at ${ticketLimit} service tickets. Upgrade plan in More tab.`, "error");
+        return;
+      }
     }
 
     const jobNo = generateNewJobNumber();
@@ -778,7 +818,7 @@ export default function ServicesTab({
   };
 
   // Submit overall Billing adjustment
-  const handleJobBillingUpdate = (payStatus: PaymentStatus, payMethod: PaymentMethod, paidAmt: number) => {
+  const handleJobBillingUpdate = (payStatus: PaymentStatus, payMethod: PaymentMethod, paidAmt: number, payNotes?: string) => {
     if (!selectedJob) return;
 
     const updatedJob: ServiceJob = {
@@ -786,7 +826,8 @@ export default function ServicesTab({
       paymentStatus: payStatus,
       paymentMethod: payMethod,
       paidAmount: Number(paidAmt),
-      paidDate: payStatus === "Paid" ? new Date().toISOString() : selectedJob.paidDate
+      paidDate: payStatus === "Paid" ? new Date().toISOString() : selectedJob.paidDate,
+      paymentNotes: payNotes !== undefined ? payNotes : selectedJob.paymentNotes
     };
 
     onUpdateJob(updatedJob);
@@ -1106,7 +1147,7 @@ export default function ServicesTab({
                   </label>
                 </div>
 
-                {/* Secure Customer Live Status Link Share */}
+                {/* Customer Live Status Link Share */}
                 <div className="pt-2 border-t border-gray-100 dark:border-stone-800 space-y-2">
                   <button
                     onClick={() => {
@@ -1831,13 +1872,9 @@ export default function ServicesTab({
                       onChange={e => handleJobBillingUpdate(selectedJob.paymentStatus, e.target.value as PaymentMethod, selectedJob.paidAmount)}
                       className="w-full text-xs font-bold bg-white dark:bg-stone-900 border border-gray-200 dark:border-stone-700 text-gray-800 dark:text-stone-200 rounded-lg py-2 px-1 focus:outline-none"
                     >
-                      <option value="Cash">Cash</option>
-                      <option value="UPI">UPI</option>
-                      <option value="Card">Card</option>
-                      <option value="Bank Transfer">Bank Transfer</option>
-                      <option value="Online">Online</option>
-                      <option value="Cheque">Cheque</option>
-                      <option value="Credit">Credit</option>
+                      {(paymentMethods.length > 0 ? paymentMethods : ["UPI", "Card", "Bank Transfer", "Online"]).map(method => (
+                        <option key={method} value={method}>{method}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -1850,7 +1887,7 @@ export default function ServicesTab({
                     type="number"
                     value={selectedJob.paidAmount}
                     onChange={e => handleJobBillingUpdate(selectedJob.paymentStatus, selectedJob.paymentMethod, Number(e.target.value))}
-                    className="w-full text-xs font-mono bg-white dark:bg-stone-900 border border-gray-200 dark:border-stone-700 rounded-lg px-3 py-2 text-gray-800 dark:text-stone-100 focus:outline-none"
+                    className="w-full text-xs font-mono bg-white dark:bg-stone-900 border border-gray-200 dark:border-stone-700 rounded-lg px-3 py-2 text-gray-800 dark:text-stone-100 focus:outline-none shadow-xs"
                   />
                 </div>
 
@@ -1868,12 +1905,77 @@ export default function ServicesTab({
                     </span>
                   </div>
 
-                  <div className="flex justify-between font-extrabold text-gray-800 dark:text-stone-100 text-sm border-t border-gray-100 dark:border-stone-800 pt-1.5">
+                  <div className="flex justify-between font-extrabold text-gray-800 dark:text-stone-100 text-sm border-t border-gray-100 dark:border-stone-800 pt-1.5 pb-2">
                     <span>Remaining Settlement balance:</span>
                     <span className="text-rose-600 dark:text-rose-400">
                       {formatCurrency(Math.max(0, selectedJob.grandTotal - selectedJob.paidAmount))}
                     </span>
                   </div>
+
+                  {merchantDetails && (selectedJob.paymentMethod === "UPI" || selectedJob.paymentMethod === "Bank Transfer" || selectedJob.paymentMethod === "Online" || selectedJob.paymentMethod?.includes("UPI") || selectedJob.paymentMethod?.includes("Bank")) && (
+                    <div className="mt-3 p-3 bg-indigo-50/70 dark:bg-stone-900 border border-indigo-100 dark:border-stone-800 rounded-xl space-y-2 text-left">
+                      <div className="flex items-center gap-1.5">
+                        <Building className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                        <span className="text-[10px] uppercase font-black tracking-wider text-indigo-700 dark:text-indigo-400">
+                          Direct Store Settlement Accounts
+                        </span>
+                      </div>
+                      
+                      {merchantDetails.merchantName && (
+                        <div className="text-[10px] text-gray-500 dark:text-stone-400 font-medium leading-none">
+                          Merchant: <span className="font-extrabold text-gray-800 dark:text-stone-200">{merchantDetails.merchantName}</span>
+                        </div>
+                      )}
+
+                      {merchantDetails.merchantUpi && (
+                        <div className="flex justify-between items-center bg-white dark:bg-black/40 px-2 py-1.5 rounded-lg border border-gray-200 dark:border-stone-800 font-mono text-[10px]">
+                          <span className="text-gray-700 dark:text-stone-300">UPI ID: <span className="font-black text-indigo-600 dark:text-indigo-400">{merchantDetails.merchantUpi}</span></span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              try {
+                                navigator.clipboard.writeText(merchantDetails.merchantUpi);
+                                showToast("Registered UPI copied successfully! 📋", "success");
+                              } catch (_) {
+                                showToast(`UPI: ${merchantDetails.merchantUpi}`, "info");
+                              }
+                            }}
+                            className="bg-indigo-50 hover:bg-indigo-100 dark:bg-stone-850 dark:hover:bg-stone-800 text-indigo-600 dark:text-indigo-400 text-[8px] tracking-wider uppercase font-black px-2 py-1 rounded cursor-pointer border-none"
+                          >
+                            Copy ID
+                          </button>
+                        </div>
+                      )}
+
+                      {merchantDetails.merchantAccountNo && (
+                        <div className="bg-white dark:bg-black/40 p-2 rounded-lg border border-gray-200 dark:border-stone-800 font-mono text-[9.5px] space-y-1">
+                          <div className="text-gray-500 dark:text-stone-400 text-[8px] uppercase tracking-wider font-bold">Bank Transfer Option</div>
+                          <div className="text-gray-700 dark:text-stone-300">Bank Name: <span className="font-bold text-gray-900 dark:text-stone-100">{merchantDetails.merchantBankName || "Registered Bank"}</span></div>
+                          <div className="text-gray-700 dark:text-stone-300 flex justify-between items-center">
+                            <span>A/C No: <span className="font-bold text-gray-900 dark:text-stone-100">{merchantDetails.merchantAccountNo}</span></span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                try {
+                                  navigator.clipboard.writeText(merchantDetails.merchantAccountNo);
+                                  showToast("Bank Account Number copied! 📋", "success");
+                                } catch (_) {
+                                  showToast(`A/C: ${merchantDetails.merchantAccountNo}`, "info");
+                                }
+                              }}
+                              className="text-[8px] font-black uppercase text-indigo-600 dark:text-indigo-400 cursor-pointer border-none bg-transparent hover:underline"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                          {merchantDetails.merchantIfsc && (
+                            <div className="text-gray-700 dark:text-stone-300">IFSC Code: <span className="font-bold text-gray-900 dark:text-stone-100">{merchantDetails.merchantIfsc}</span></div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                 </div>
               </div>
 

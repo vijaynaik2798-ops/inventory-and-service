@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import QRScannerModal from "./QRScannerModal";
-import { Customer, ServiceJob } from "../types";
+import { Customer, ServiceJob, SubscriptionDetail, PLAN_LIMITS } from "../types";
 import {
   Search,
   Plus,
@@ -22,6 +22,7 @@ interface CustomersTabProps {
   customers: Customer[];
   services: ServiceJob[];
   currentUser: any;
+  subscription?: SubscriptionDetail;
   onAddCustomer: (data: Omit<Customer, "id" | "createdAt">) => void;
   onEditCustomer: (customer: Customer) => void;
   showToast: (msg: string, type?: "success" | "error" | "info") => void;
@@ -32,6 +33,7 @@ export default function CustomersTab({
   customers,
   services,
   currentUser,
+  subscription,
   onAddCustomer,
   onEditCustomer,
   showToast,
@@ -117,6 +119,15 @@ export default function CustomersTab({
     if (!newName || !newPhone) {
       showToast("Name and Phone are required", "error");
       return;
+    }
+
+    if (subscription) {
+      const activePlan = subscription.plan;
+      const clientLimit = PLAN_LIMITS[activePlan].customers;
+      if (customers.length >= clientLimit) {
+        showToast(`Client limit hit! Your '${activePlan}' plan is capped at ${clientLimit} clients. Upgrade plan in More tab.`, "error");
+        return;
+      }
     }
 
     onAddCustomer({
@@ -352,7 +363,7 @@ export default function CustomersTab({
                   </div>
                 </div>
 
-                {/* Secure Client unique QR Card */}
+                {/* Client unique QR Card */}
                 <div className="flex flex-col items-center bg-slate-50 dark:bg-stone-800/60 p-2.5 rounded-2xl border border-gray-100 dark:border-stone-800 shrink-0">
                   <div className="p-1 bg-white rounded-lg">
                     <img
@@ -493,6 +504,8 @@ export default function CustomersTab({
                 />
               </div>
 
+
+
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">
                   Customer Site Address
@@ -590,6 +603,8 @@ export default function CustomersTab({
                   className="w-full text-xs bg-slate-50 dark:bg-stone-800 text-gray-800 dark:text-stone-100 border border-gray-200 dark:border-stone-700 rounded-xl px-3.5 py-3 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
+
+
 
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">

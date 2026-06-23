@@ -4,7 +4,9 @@ import {
   InventoryItem,
   Staff,
   WhatsAppTemplate,
-  JobStatus
+  JobStatus,
+  SubscriptionDetail,
+  SubscriptionPlan
 } from "../types";
 
 // Default storage locations
@@ -14,6 +16,29 @@ export const DEFAULT_LOCATIONS = [
   "Store Room",
   "Repair Table",
   "Delivery Area"
+];
+
+export const DEFAULT_SERVICE_LOCATIONS = [
+  "Received Shelf A",
+  "Repair Desk B",
+  "Under Testing Row",
+  "Ready for Delivery",
+  "Quality Testing Bay"
+];
+
+export const DEFAULT_STOCK_LOCATIONS = [
+  "Main Store Room",
+  "Warehouse Rack A",
+  "Bulk Cabinet C",
+  "Spare Box 3",
+  "Transit Shelf"
+];
+
+export const DEFAULT_PAYMENT_METHODS = [
+  "UPI",
+  "Card",
+  "Bank Transfer",
+  "Online"
 ];
 
 // Default technicians/staff
@@ -102,7 +127,7 @@ Dear {{customerName}}, your Job *{{jobNo}}* has been marked as *Delivered*.
 *Total Paid:* ₹{{grandTotal}}
 *Status:* {{status}}
 
-Thank you for trusting Inventory Service for your CCTV & security electronics. Have a great day!`
+Thank you for trusting Inventory Service for your Service and Stock equipment. Have a great day!`
   }
 ];
 
@@ -111,6 +136,25 @@ const isBrowser = typeof window !== "undefined";
 
 export const getCloudItem = async (key: string): Promise<string | null> => {
   if (!isBrowser) return null;
+
+  // 1. In production or development host container, attempt to fetch from server-side database
+  try {
+    const res = await fetch(`/api/db/${encodeURIComponent(key)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.value !== null) {
+        // Keep in sync locally
+        try {
+          localStorage.setItem(key, data.value);
+        } catch (_) {}
+        return data.value;
+      }
+    }
+  } catch (err) {
+    console.warn("Backend server not reached for getCloudItem, using fallback cache:", err);
+  }
+
+  // 2. Fallback to storage component sandbox context
   try {
     const storageObj = (window as any).storage;
     if (storageObj && typeof storageObj.getItem === "function") {
@@ -135,7 +179,29 @@ export const getCloudItem = async (key: string): Promise<string | null> => {
 
 export const setCloudItem = async (key: string, value: string): Promise<void> => {
   if (!isBrowser) return;
-  // Write to window.storage
+
+  // 1. LocalStorage write for instant read-backs and tab sync helper
+  try {
+    localStorage.setItem(key, value);
+    window.dispatchEvent(new Event("storage_sync"));
+  } catch (err) {
+    console.warn("localStorage.setItem failed", err);
+  }
+
+  // 2. Save directly to Express backend database
+  try {
+    await fetch(`/api/db/${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ value })
+    });
+  } catch (err) {
+    console.warn("Backend server write failed, state saved offline in local storage cache:", err);
+  }
+
+  // 3. Write to window.storage sandbox wrapper
   try {
     const storageObj = (window as any).storage;
     if (storageObj && typeof storageObj.setItem === "function") {
@@ -147,14 +213,6 @@ export const setCloudItem = async (key: string, value: string): Promise<void> =>
   } catch (err) {
     console.warn("window.storage.setItem failed", err);
   }
-
-  // LocalStorage write for instant read-backs and tab sync helper
-  try {
-    localStorage.setItem(key, value);
-    window.dispatchEvent(new Event("storage_sync"));
-  } catch (err) {
-    console.warn("localStorage.setItem failed", err);
-  }
 };
 
 /**
@@ -164,12 +222,15 @@ export interface AppData {
   customers: Customer[];
   services: ServiceJob[];
   inventory: InventoryItem[];
-  locations: string[];
+  serviceLocations: string[];
+  stockLocations: string[];
+  paymentMethods: string[];
   technicians: Staff[];
   users: any[];
   activeSession: any | null;
   jobCounter: number;
   waTemplates: WhatsAppTemplate[];
+  subscription: SubscriptionDetail;
 }
 
 export const loadAllData = async (): Promise<AppData> => {
@@ -177,209 +238,122 @@ export const loadAllData = async (): Promise<AppData> => {
     custRaw,
     servRaw,
     invRaw,
-    locRaw,
+    serviceLocRaw,
+    stockLocRaw,
+    payMethodsRaw,
     techRaw,
     usersRaw,
     sessRaw,
     counterRaw,
-    waRaw
+    waRaw,
+    subRaw
   ] = await Promise.all([
     getCloudItem("inventory_service_customers"),
     getCloudItem("inventory_service_services"),
     getCloudItem("inventory_service_inventory"),
-    getCloudItem("inventory_service_locations"),
+    getCloudItem("inventory_service_service_locations"),
+    getCloudItem("inventory_service_stock_locations"),
+    getCloudItem("inventory_service_payment_methods"),
     getCloudItem("inventory_service_technicians"),
     getCloudItem("inventory_service_users"),
-    getCloudItem("inventory_service_session_v2"),
+    Promise.resolve(typeof window !== "undefined" ? localStorage.getItem("inventory_service_session_v2") : null),
     getCloudItem("inventory_service_job_counter"),
-    getCloudItem("inventory_service_wa_templates")
+    getCloudItem("inventory_service_wa_templates"),
+    getCloudItem("inventory_service_subscription")
   ]);
 
-  const customers = custRaw ? JSON.parse(custRaw) : [];
-  const services = servRaw ? JSON.parse(servRaw) : [];
-  const inventory = invRaw ? JSON.parse(invRaw) : [];
-  const locations = locRaw ? JSON.parse(locRaw) : DEFAULT_LOCATIONS;
+  const parsedCustomers = custRaw ? JSON.parse(custRaw) : [];
+  const parsedServices = servRaw ? JSON.parse(servRaw) : [];
+  const parsedInventory = invRaw ? JSON.parse(invRaw) : [];
+  const serviceLocations = serviceLocRaw ? JSON.parse(serviceLocRaw) : DEFAULT_SERVICE_LOCATIONS;
+  const stockLocations = stockLocRaw ? JSON.parse(stockLocRaw) : DEFAULT_STOCK_LOCATIONS;
+  const paymentMethods = payMethodsRaw ? JSON.parse(payMethodsRaw) : DEFAULT_PAYMENT_METHODS;
   const technicians = techRaw ? JSON.parse(techRaw) : DEFAULT_STAFF;
   const users = usersRaw ? JSON.parse(usersRaw) : [];
   const activeSession = sessRaw ? JSON.parse(sessRaw) : null;
   const jobCounter = counterRaw ? parseInt(counterRaw, 10) : 0;
   const waTemplates = waRaw ? JSON.parse(waRaw) : DEFAULT_WA_TEMPLATES;
 
-  // Let's seed initial mock data if empty (for beautiful immediate load)
+  let customers = parsedCustomers;
+  let services = parsedServices;
+  let inventory = parsedInventory;
+
+  // Prioritize direct query data from real cloud Firestore collections if authenticated
+  try {
+    const fb = await import("./firebase");
+    const { collection, getDocs } = await import("firebase/firestore");
+    if (fb.auth.currentUser) {
+      const [custSnap, servSnap, invSnap] = await Promise.all([
+        getDocs(collection(fb.db, "customers")),
+        getDocs(collection(fb.db, "service_jobs")),
+        getDocs(collection(fb.db, "inventory"))
+      ]);
+
+      if (!custSnap.empty) {
+        customers = custSnap.docs.map(doc => doc.data()) as Customer[];
+      }
+      if (!servSnap.empty) {
+        services = servSnap.docs.map(doc => doc.data()) as ServiceJob[];
+      }
+      if (!invSnap.empty) {
+        inventory = invSnap.docs.map(doc => doc.data()) as InventoryItem[];
+      }
+    }
+  } catch (err) {
+    console.warn("Firestore cloud collection fetch deferred or offline, fallback to flat cache:", err);
+  }
+
+  // Initialize fresh subscription if none exists: 15 days free Premium trial plan!
+  const defaultSub: SubscriptionDetail = {
+    plan: "Premium",
+    status: "Active",
+    startDate: new Date().toISOString().split("T")[0],
+    expiryDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    paymentHistory: [
+      {
+        id: "TRIAL-" + Math.random().toString(36).substring(2, 11).toUpperCase(),
+        date: new Date().toISOString().split("T")[0],
+        amount: 0,
+        plan: "Premium",
+        paymentMethod: "Free Trial Integration",
+        transactionId: "TRIAL-INIT"
+      }
+    ]
+  };
+  const parsedSub: any = subRaw ? JSON.parse(subRaw) : defaultSub;
+  
+  // Backward compatibility migration: Map legacy paid tiers "Growth" and "Enterprise" to "Premium"
+  if (parsedSub) {
+    if (parsedSub.plan === "Growth" || parsedSub.plan === "Enterprise") {
+      parsedSub.plan = "Premium";
+    } else if (parsedSub.plan !== "Free" && parsedSub.plan !== "Premium") {
+      parsedSub.plan = "Free";
+    }
+    // Also upgrade payment history items if any
+    if (Array.isArray(parsedSub.paymentHistory)) {
+      parsedSub.paymentHistory.forEach((p: any) => {
+        if (p.plan === "Growth" || p.plan === "Enterprise") {
+          p.plan = "Premium";
+        }
+      });
+    }
+  }
+  const subscription: SubscriptionDetail = parsedSub;
+
+  // Seeding disabled for Play Store production upload
   let seededCustomers = [...customers];
   let seededServices = [...services];
   let seededInventory = [...inventory];
   let seededCounter = jobCounter;
 
-  if (customers.length === 0 && services.length === 0) {
-    // Let's seed 1 default customer
-    const sampleCust: Customer = {
-      id: "CUST-1001",
-      name: "Ramesh Sharma",
-      phone: "+919876543210",
-      address: "First Cross Road, Near Central Library, Bangalore 560001",
-      notes: "Preferred customer, CCTV system maintenance contract holder.",
-      createdAt: new Date().toISOString()
-    };
-    seededCustomers.push(sampleCust);
-
-    // Let's seed 1 service job with 2 devices
-    seededCounter = 1;
-    const sampleJob: ServiceJob = {
-      id: "INVSRV-2026-0001",
-      customerId: "CUST-1001",
-      date: "2026-06-07",
-      createdAt: new Date().toISOString(),
-      waEnabled: true,
-      paymentStatus: "Partial",
-      paymentMethod: "UPI",
-      grandTotal: 1750,
-      paidAmount: 500,
-      items: [
-        {
-          id: "INVSRV-2026-0001-A",
-          productName: "Dahua IP Camera 4MP",
-          brand: "Dahua",
-          category: "CCTV Dome Camera",
-          modelNo: "DS-2CD2143G0-I",
-          serialNo: "HK883719042",
-          condition: "Lens dirty, power cuts off after 5 mins",
-          problemDescription: "Power board failure and needs lens clean",
-          accessories: {
-            Adapter: false,
-            dvr: false,
-            nvr: false,
-            HDD: false,
-            WiFi: false,
-            "sim camera": false,
-            "Power Supply": true,
-            "Memory Card": true
-          },
-          serviceCharge: 450,
-          spareCharge: 350,
-          discount: 50,
-          total: 750,
-          technicianId: "S1", // Vijay Naik
-          status: "Repairing",
-          statusHistory: [
-            { status: "Received", changedBy: "Vijay Naik", timestamp: "2026-06-07T09:00:00Z" },
-            { status: "Under Inspection", changedBy: "Vijay Naik", timestamp: "2026-06-07T10:00:00Z" },
-            { status: "Repairing", changedBy: "Vijay Naik", timestamp: "2026-06-07T11:30:00Z" }
-          ],
-          currentLocation: "Repair Table",
-          locationHistory: [
-            { location: "Shelf A", assignedBy: "Vijay Naik", timestamp: "2026-06-07T09:05:00Z" },
-            { location: "Repair Table", assignedBy: "Vijay Naik", timestamp: "2026-06-07T11:40:00Z" }
-          ],
-          replacements: [
-            {
-              id: "REP-1",
-              partName: "Power Regulator IC",
-              oldSerial: "78M05-391",
-              newSerial: "78M05-88A",
-              oldModel: "Regulator IC v1",
-              newModel: "Regulator IC Premium",
-              reason: "Damaged due to voltage spike",
-              timestamp: "2026-06-07T11:45:00Z"
-            }
-          ]
-        },
-        {
-          id: "INVSRV-2026-0001-B",
-          productName: "D-Link 8-Port PoE Switch",
-          brand: "D-Link",
-          category: "Networking Switch",
-          modelNo: "DES-1008P",
-          serialNo: "DL617293112",
-          condition: "Port 3 and 4 not giving power",
-          problemDescription: "PoE controller chip replacement",
-          accessories: {
-            Adapter: true,
-            dvr: false,
-            nvr: false,
-            HDD: false,
-            WiFi: false,
-            "sim camera": false,
-            "Power Supply": false,
-            "Memory Card": false
-          },
-          serviceCharge: 600,
-          spareCharge: 400,
-          discount: 0,
-          total: 1000,
-          technicianId: "S2", // Anand Kumar
-          status: "Under Inspection",
-          statusHistory: [
-            { status: "Received", changedBy: "Deepa Nair", timestamp: "2026-06-07T09:10:00Z" },
-            { status: "Under Inspection", changedBy: "Anand Kumar", timestamp: "2026-06-07T10:15:00Z" }
-          ],
-          currentLocation: "Shelf A",
-          locationHistory: [
-            { location: "Shelf A", assignedBy: "Deepa Nair", timestamp: "2026-06-07T09:15:00Z" }
-          ],
-          replacements: []
-        }
-      ]
-    };
-    seededServices.push(sampleJob);
+  if (!serviceLocRaw) {
+    await setCloudItem("inventory_service_service_locations", JSON.stringify(serviceLocations));
   }
-
-  if (inventory.length === 0) {
-    // Seed some inventory items
-    seededInventory = [
-      {
-        id: "INV-1001",
-        brand: "Dahua",
-        category: "CCTV Bullet Camera",
-        modelNo: "DS-2CE16D0T-IR",
-        serialNo: "DH192837482",
-        productName: "Dahua 2MP Outdoor Bullet Camera",
-        quantity: 12,
-        minQuantity: 5,
-        location: "Store Room",
-        createdAt: new Date().toISOString(),
-        history: [{ type: "In", quantity: 12, notes: "Initial setup stock", timestamp: new Date().toISOString(), user: "Suresh Patil" }]
-      },
-      {
-        id: "INV-1002",
-        brand: "CP Plus",
-        category: "DVR Receiver",
-        modelNo: "CP-UVR-0801E1",
-        serialNo: "CP992837119",
-        productName: "CP Plus 8-Channel UVR",
-        quantity: 3, // Trigger low stock alert!
-        minQuantity: 5,
-        location: "Warehouse B",
-        createdAt: new Date().toISOString(),
-        history: [{ type: "In", quantity: 3, notes: "Leftover stock", timestamp: new Date().toISOString(), user: "Suresh Patil" }]
-      },
-      {
-        id: "INV-1003",
-        brand: "Seagate",
-        category: "Hard Disk Drive",
-        modelNo: "ST2000VX015",
-        serialNo: "SG663819021",
-        productName: "Seagate SkyHawk 2TB Surveillance HDD",
-        quantity: 8,
-        minQuantity: 5,
-        location: "Store Room",
-        createdAt: new Date().toISOString(),
-        history: [{ type: "In", quantity: 8, notes: "Purchased on contract", timestamp: new Date().toISOString(), user: "Suresh Patil" }]
-      }
-    ];
+  if (!stockLocRaw) {
+    await setCloudItem("inventory_service_stock_locations", JSON.stringify(stockLocations));
   }
-
-  // Save seeded if empty
-  if (customers.length === 0 && services.length === 0) {
-    await setCloudItem("inventory_service_customers", JSON.stringify(seededCustomers));
-    await setCloudItem("inventory_service_services", JSON.stringify(seededServices));
-    await setCloudItem("inventory_service_job_counter", seededCounter.toString());
-  }
-  if (inventory.length === 0) {
-    await setCloudItem("inventory_service_inventory", JSON.stringify(seededInventory));
-  }
-  if (!locRaw) {
-    await setCloudItem("inventory_service_locations", JSON.stringify(locations));
+  if (!payMethodsRaw) {
+    await setCloudItem("inventory_service_payment_methods", JSON.stringify(paymentMethods));
   }
   if (!techRaw) {
     await setCloudItem("inventory_service_technicians", JSON.stringify(technicians));
@@ -387,17 +361,23 @@ export const loadAllData = async (): Promise<AppData> => {
   if (!waRaw) {
     await setCloudItem("inventory_service_wa_templates", JSON.stringify(waTemplates));
   }
+  if (!subRaw) {
+    await setCloudItem("inventory_service_subscription", JSON.stringify(subscription));
+  }
 
   return {
     customers: seededCustomers,
     services: seededServices,
     inventory: seededInventory,
-    locations,
+    serviceLocations,
+    stockLocations,
+    paymentMethods,
     technicians,
     users,
     activeSession,
     jobCounter: seededCounter,
-    waTemplates
+    waTemplates,
+    subscription
   };
 };
 
@@ -406,18 +386,195 @@ export const loadAllData = async (): Promise<AppData> => {
  */
 export const saveCustomers = async (customers: Customer[]): Promise<void> => {
   await setCloudItem("inventory_service_customers", JSON.stringify(customers));
+
+  try {
+    const fb = await import("./firebase");
+    const { doc, setDoc, deleteDoc, getDocs, collection } = await import("firebase/firestore");
+    if (fb.auth.currentUser) {
+      for (const item of customers) {
+        const cleanItem = {
+          id: String(item.id),
+          name: String(item.name),
+          phone: String(item.phone),
+          address: String(item.address || ""),
+          notes: String(item.notes || ""),
+          createdAt: String(item.createdAt || new Date().toISOString())
+        };
+        try {
+          await setDoc(doc(fb.db, "customers", cleanItem.id), cleanItem);
+        } catch (writeErr) {
+          fb.handleFirestoreError(writeErr, fb.OperationType.WRITE, `customers/${cleanItem.id}`);
+        }
+      }
+
+      // Sync deletes
+      try {
+        const snap = await getDocs(collection(fb.db, "customers"));
+        const currentIds = customers.map(c => c.id);
+        for (const d of snap.docs) {
+          if (!currentIds.includes(d.id)) {
+            await deleteDoc(doc(fb.db, "customers", d.id));
+          }
+        }
+      } catch (logErr) {
+        fb.handleFirestoreError(logErr, fb.OperationType.DELETE, "customers");
+      }
+    }
+  } catch (err) {
+    console.warn("Firestore customer synced offline/skipped:", err);
+  }
 };
 
 export const saveServices = async (services: ServiceJob[]): Promise<void> => {
   await setCloudItem("inventory_service_services", JSON.stringify(services));
+
+  try {
+    const fb = await import("./firebase");
+    const { doc, setDoc, deleteDoc, getDocs, collection } = await import("firebase/firestore");
+    if (fb.auth.currentUser) {
+      for (const item of services) {
+        const cleanItem = {
+          id: String(item.id),
+          customerId: String(item.customerId),
+          date: String(item.date || ""),
+          items: Array.isArray(item.items) ? item.items.map(srvItem => ({
+            id: String(srvItem.id),
+            productName: String(srvItem.productName || ""),
+            brand: String(srvItem.brand || ""),
+            category: String(srvItem.category || ""),
+            modelNo: String(srvItem.modelNo || ""),
+            serialNo: String(srvItem.serialNo || ""),
+            condition: String(srvItem.condition || ""),
+            problemDescription: String(srvItem.problemDescription || ""),
+            accessories: srvItem.accessories || {},
+            serviceCharge: Number(srvItem.serviceCharge) || 0,
+            spareCharge: Number(srvItem.spareCharge) || 0,
+            discount: Number(srvItem.discount) || 0,
+            total: Number(srvItem.total) || 0,
+            technicianId: String(srvItem.technicianId || ""),
+            status: String(srvItem.status || "Received"),
+            statusHistory: Array.isArray(srvItem.statusHistory) ? srvItem.statusHistory.map(sh => ({
+              status: String(sh.status),
+              changedBy: String(sh.changedBy || ""),
+              timestamp: String(sh.timestamp || new Date().toISOString())
+            })) : [],
+            currentLocation: String(srvItem.currentLocation || ""),
+            locationHistory: Array.isArray(srvItem.locationHistory) ? srvItem.locationHistory.map(lh => ({
+              location: String(lh.location),
+              assignedBy: String(lh.assignedBy || ""),
+              timestamp: String(lh.timestamp || new Date().toISOString())
+            })) : [],
+            replacements: Array.isArray(srvItem.replacements) ? srvItem.replacements.map(rep => ({
+              id: String(rep.id),
+              partName: String(rep.partName || ""),
+              oldSerial: String(rep.oldSerial || ""),
+              newSerial: String(rep.newSerial || ""),
+              oldModel: String(rep.oldModel || ""),
+              newModel: String(rep.newModel || ""),
+              reason: String(rep.reason || ""),
+              timestamp: String(rep.timestamp || new Date().toISOString())
+            })) : []
+          })) : [],
+          waEnabled: Boolean(item.waEnabled),
+          paymentStatus: String(item.paymentStatus || "Unpaid"),
+          paymentMethod: String(item.paymentMethod || "UPI"),
+          grandTotal: Number(item.grandTotal) || 0,
+          paidAmount: Number(item.paidAmount) || 0,
+          paidDate: String(item.paidDate || ""),
+          createdAt: String(item.createdAt || new Date().toISOString()),
+          paymentNotes: String(item.paymentNotes || "")
+        };
+        try {
+          await setDoc(doc(fb.db, "service_jobs", cleanItem.id), cleanItem);
+        } catch (writeErr) {
+          fb.handleFirestoreError(writeErr, fb.OperationType.WRITE, `service_jobs/${cleanItem.id}`);
+        }
+      }
+
+      // Sync deletes
+      try {
+        const snap = await getDocs(collection(fb.db, "service_jobs"));
+        const currentIds = services.map(s => s.id);
+        for (const d of snap.docs) {
+          if (!currentIds.includes(d.id)) {
+            await deleteDoc(doc(fb.db, "service_jobs", d.id));
+          }
+        }
+      } catch (logErr) {
+        fb.handleFirestoreError(logErr, fb.OperationType.DELETE, "service_jobs");
+      }
+    }
+  } catch (err) {
+    console.warn("Firestore service jobs synced offline/skipped:", err);
+  }
 };
 
 export const saveInventory = async (inventory: InventoryItem[]): Promise<void> => {
   await setCloudItem("inventory_service_inventory", JSON.stringify(inventory));
+
+  try {
+    const fb = await import("./firebase");
+    const { doc, setDoc, deleteDoc, getDocs, collection } = await import("firebase/firestore");
+    if (fb.auth.currentUser) {
+      for (const item of inventory) {
+        const cleanItem = {
+          id: String(item.id),
+          brand: String(item.brand),
+          category: String(item.category),
+          modelNo: String(item.modelNo),
+          serialNo: String(item.serialNo || ""),
+          productName: String(item.productName),
+          quantity: Math.floor(Number(item.quantity) || 0),
+          minQuantity: Math.floor(Number(item.minQuantity) || 5),
+          location: String(item.location || ""),
+          purchaseDate: String(item.purchaseDate || ""),
+          supplier: String(item.supplier || ""),
+          status: String(item.status || "Active"),
+          notes: String(item.notes || ""),
+          history: Array.isArray(item.history) ? item.history.map(h => ({
+            type: String(h.type) as "In" | "Out",
+            quantity: Math.floor(Number(h.quantity) || 0),
+            notes: String(h.notes || ""),
+            timestamp: String(h.timestamp || new Date().toISOString()),
+            user: String(h.user || "Operator")
+          })) : [],
+          createdAt: String(item.createdAt || new Date().toISOString())
+        };
+        try {
+          await setDoc(doc(fb.db, "inventory", cleanItem.id), cleanItem);
+        } catch (writeErr) {
+          fb.handleFirestoreError(writeErr, fb.OperationType.WRITE, `inventory/${cleanItem.id}`);
+        }
+      }
+
+      // Sync deletes
+      try {
+        const snap = await getDocs(collection(fb.db, "inventory"));
+        const currentIds = inventory.map(i => i.id);
+        for (const d of snap.docs) {
+          if (!currentIds.includes(d.id)) {
+            await deleteDoc(doc(fb.db, "inventory", d.id));
+          }
+        }
+      } catch (logErr) {
+        fb.handleFirestoreError(logErr, fb.OperationType.DELETE, "inventory");
+      }
+    }
+  } catch (err) {
+    console.warn("Firestore inventory synced offline/skipped:", err);
+  }
+};
+
+export const saveServiceLocations = async (locations: string[]): Promise<void> => {
+  await setCloudItem("inventory_service_service_locations", JSON.stringify(locations));
+};
+
+export const saveStockLocations = async (locations: string[]): Promise<void> => {
+  await setCloudItem("inventory_service_stock_locations", JSON.stringify(locations));
 };
 
 export const saveLocations = async (locations: string[]): Promise<void> => {
-  await setCloudItem("inventory_service_locations", JSON.stringify(locations));
+  await setCloudItem("inventory_service_service_locations", JSON.stringify(locations));
 };
 
 export const saveTechnicians = async (technicians: Staff[]): Promise<void> => {
@@ -429,7 +586,13 @@ export const saveUsers = async (users: any[]): Promise<void> => {
 };
 
 export const saveSession = async (session: any | null): Promise<void> => {
-  await setCloudItem("inventory_service_session_v2", JSON.stringify(session));
+  if (typeof window !== "undefined") {
+    if (session) {
+      localStorage.setItem("inventory_service_session_v2", JSON.stringify(session));
+    } else {
+      localStorage.removeItem("inventory_service_session_v2");
+    }
+  }
 };
 
 export const saveJobCounter = async (counter: number): Promise<void> => {
@@ -438,4 +601,12 @@ export const saveJobCounter = async (counter: number): Promise<void> => {
 
 export const saveWaTemplates = async (templates: WhatsAppTemplate[]): Promise<void> => {
   await setCloudItem("inventory_service_wa_templates", JSON.stringify(templates));
+};
+
+export const savePaymentMethods = async (methods: string[]): Promise<void> => {
+  await setCloudItem("inventory_service_payment_methods", JSON.stringify(methods));
+};
+
+export const saveSubscription = async (sub: SubscriptionDetail): Promise<void> => {
+  await setCloudItem("inventory_service_subscription", JSON.stringify(sub));
 };

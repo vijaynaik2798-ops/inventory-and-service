@@ -57,11 +57,11 @@
         },
         "brand": {
           "type": "string",
-          "description": "Manufacturing brand name eg. Hikvision, Dahua, CP Plus."
+          "description": "Manufacturing brand name eg. Hikvision, Bosch, CP Plus."
         },
         "category": {
           "type": "string",
-          "description": "Component or equipment class eg. CCTV IP Dome, Hard Drive, PoE Switch."
+          "description": "Component or equipment class eg. Camera Unit, Hard Drive, PoE Switch."
         },
         "modelNo": {
           "type": "string",

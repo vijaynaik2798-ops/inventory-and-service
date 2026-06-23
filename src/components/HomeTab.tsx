@@ -134,7 +134,7 @@ export default function HomeTab({
           
           <div className="mt-8 flex justify-between items-end">
             <div className="flex flex-col">
-              <span className="text-[9px] uppercase font-bold opacity-80 tracking-widest">CCTV Logistics Tool</span>
+              <span className="text-[9px] uppercase font-bold opacity-80 tracking-widest">Service & Stock Intelligence</span>
               <span className="text-[11px] font-semibold opacity-70 truncate max-w-[170px]">
                 {currentUser ? currentUser.email : "system@invservice.com"}
               </span>

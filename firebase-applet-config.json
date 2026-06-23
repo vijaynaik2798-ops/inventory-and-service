@@ -3,6 +3,7 @@
   "appId": "1:392038421695:web:ea7110eb2fd46f2ab4a20a",
   "apiKey": "AIzaSyBinZIv2MyutiBqO0egFMnkBtdzVQwOb5Q",
   "authDomain": "collective-hill-t5xj8.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-b82ede06-bbd8-4f3d-bbe7-48a3650630e2",
   "storageBucket": "collective-hill-t5xj8.firebasestorage.app",
   "messagingSenderId": "392038421695",
   "measurementId": ""

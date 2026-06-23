@@ -1,5 +1,7 @@
 import { Sun, Moon, RefreshCw, Layers } from "lucide-react";
 import { User } from "../types";
+// @ts-ignore
+import stockivoLogo from "../assets/images/stockivo_logo_1781919165591.jpg";
 
 interface HeaderProps {
   currentUser: User | null;
@@ -41,9 +43,12 @@ export default function Header({
   return (
     <header className="bg-white/85 dark:bg-stone-900/85 backdrop-blur-md px-5 py-3.5 flex justify-between items-center border-b border-slate-100 dark:border-stone-800/80 sticky top-0 z-40 transition-colors duration-200">
       <div className="flex items-center gap-2.5">
-        <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-tr from-[#6366f1] to-indigo-600 text-white shadow-md shadow-indigo-500/20">
-          <Layers className="w-4.5 h-4.5" />
-        </div>
+        <img
+          src={stockivoLogo}
+          alt="STOCKIVO LOGO"
+          className="w-8 h-8 rounded-xl object-cover shadow-sm border border-slate-200/50 dark:border-stone-800 bg-white"
+          referrerPolicy="no-referrer"
+        />
         <div className="flex flex-col">
           <span className="text-gray-900 dark:text-white font-black text-md tracking-tight leading-none font-sans">STOCKIVO</span>
           <span className="text-[7.5px] font-black tracking-widest text-[#6366f1] dark:text-indigo-400 mt-1 font-mono">INTELLIGENCE</span>

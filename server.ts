@@ -40,7 +40,7 @@ app.post("/api/ai/diagnose", async (req, res) => {
       ? `Here are the available parts in inventory: ${JSON.stringify(inventory.map(i => ({ name: i.name, sku: i.sku, qty: i.quantity })))}`
       : "No direct inventory provided, recommend standard parts.";
 
-    const prompt = `Analyze the following CCTV / Electronics device issue and provide professional diagnostic advice, estimated costs, recommended spare parts, and estimate of repair time.
+    const prompt = `Analyze the following service device/equipment issue and provide professional diagnostic advice, estimated costs, recommended spare parts, and estimate of repair time.
     
 Issue: "${issueDescription}"
 ${inventoryPrompt}
@@ -51,7 +51,7 @@ Provide the response in structured JSON.`;
       model: "gemini-3.5-flash",
       contents: prompt,
       config: {
-        systemInstruction: "You are an intelligent, senior technician assistant specializing in CCTV and electronics repair. Provide accurate and direct structural feedback.",
+        systemInstruction: "You are an intelligent, senior technician assistant specializing in general systems and stock electronics repair. Provide accurate and direct structural feedback.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -150,7 +150,7 @@ app.post("/api/ai/draft-msg", async (req, res) => {
       return res.status(400).json({ error: "customerName and jobNo are required." });
     }
 
-    const prompt = `Draft a polite, highly professional message updates for customer ${customerName} regarding their service ticket ${jobNo}. The device items: "${itemsDescription || "CCTV Logistics Service"}", current status is "${status || "In Progress"}". Make it neat, pleasant, and include a clear, friendly call-to-action. No markdown formatting.`;
+    const prompt = `Draft a polite, highly professional message updates for customer ${customerName} regarding their service ticket ${jobNo}. The device items: "${itemsDescription || "Technical Logistics Service"}", current status is "${status || "In Progress"}". Make it neat, pleasant, and include a clear, friendly call-to-action. No markdown formatting.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
@@ -176,6 +176,167 @@ app.post("/api/ai/draft-msg", async (req, res) => {
     console.error("AI Draft error:", error);
     res.status(500).json({ error: error.message || "AI Copywriting failed" });
   }
+});
+
+// --- Server-Side JSON database key-value persistence ---
+import fs from "fs";
+import { initializeApp, getApps, getApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+
+const DB_FILE_PATH = path.join(process.cwd(), "server_db.json");
+
+function readServerDb(): Record<string, string> {
+  try {
+    if (fs.existsSync(DB_FILE_PATH)) {
+      const data = fs.readFileSync(DB_FILE_PATH, "utf8");
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error("Failed to read server_db.json, fallback: empty local storage representation.", error);
+  }
+  return {};
+}
+
+function writeServerDb(dbData: Record<string, string>) {
+  try {
+    fs.writeFileSync(DB_FILE_PATH, JSON.stringify(dbData, null, 2), "utf8");
+  } catch (error) {
+    console.error("Failed to write server_db.json:", error);
+  }
+}
+
+// Initialize Firebase Admin on the Backend Server if possible
+const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
+let firestoreDb: any = null;
+
+if (fs.existsSync(firebaseConfigPath)) {
+  try {
+    const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
+    if (firebaseConfig && firebaseConfig.projectId) {
+      let adminApp;
+      if (getApps().length === 0) {
+        adminApp = initializeApp({
+          projectId: firebaseConfig.projectId
+        });
+      } else {
+        adminApp = getApp();
+      }
+      firestoreDb = firebaseConfig.firestoreDatabaseId 
+        ? getFirestore(adminApp, firebaseConfig.firestoreDatabaseId)
+        : getFirestore(adminApp);
+      console.log("Firebase Admin initialized successfully on backend server with project ID:", firebaseConfig.projectId, "and database ID:", firebaseConfig.firestoreDatabaseId || "(default)");
+    }
+  } catch (err) {
+    console.error("Failed to initialize Firebase Admin on backend server:", err);
+  }
+}
+
+app.get("/api/db/:key", async (req, res) => {
+  const { key } = req.params;
+
+  if (firestoreDb) {
+    try {
+      const docSnap = await firestoreDb.collection("kv_store").doc(key).get();
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        return res.json({ value: data && data.value !== undefined ? data.value : null });
+      } else {
+        // Not found in Firestore yet, fall back to server_db.json
+        const dbData = readServerDb();
+        const fallbackValue = dbData[key];
+        if (fallbackValue !== undefined) {
+          // Sync it immediately so it gets stored in Firestore
+          await firestoreDb.collection("kv_store").doc(key).set({ value: fallbackValue, updatedAt: new Date().toISOString() });
+          return res.json({ value: fallbackValue });
+        }
+        return res.json({ value: null });
+      }
+    } catch (err: any) {
+      console.error(`Firebase Firestore read error for key "${key}", falling back to file storage:`, err);
+    }
+  }
+
+  // Fallback to absolute file cache
+  const dbData = readServerDb();
+  const value = dbData[key] !== undefined ? dbData[key] : null;
+  res.json({ value });
+});
+
+app.post("/api/db/:key", async (req, res) => {
+  const { key } = req.params;
+  const { value } = req.body;
+  if (value === undefined) {
+    return res.status(400).json({ error: "value is required in request body" });
+  }
+
+  // Always write locally as a hot cache backup
+  const dbData = readServerDb();
+  dbData[key] = value;
+  writeServerDb(dbData);
+
+  if (firestoreDb) {
+    try {
+      await firestoreDb.collection("kv_store").doc(key).set({ value, updatedAt: new Date().toISOString() });
+      console.log(`Backend saved key "${key}" securely to Firebase Cloud Firestore via Admin SDK.`);
+      return res.json({ success: true, key, stored: "firestore" });
+    } catch (err: any) {
+      console.error(`Firebase Firestore write error for key "${key}":`, err);
+    }
+  }
+
+  res.json({ success: true, key, stored: "local" });
+});
+
+app.get("/api/db-batch", async (req, res) => {
+  if (firestoreDb) {
+    try {
+      const colSnap = await firestoreDb.collection("kv_store").get();
+      const data: Record<string, string> = {};
+
+      colSnap.forEach((docSnap: any) => {
+        const docData = docSnap.data();
+        if (docData && docData.value !== undefined) {
+          data[docSnap.id] = docData.value;
+        }
+      });
+
+      if (Object.keys(data).length > 0) {
+        return res.json({ success: true, data });
+      }
+    } catch (err: any) {
+      console.error("Firebase Firestore batch read error, falling back to file storage:", err);
+    }
+  }
+
+  const dbData = readServerDb();
+  res.json({ success: true, data: dbData });
+});
+
+app.post("/api/db-batch", async (req, res) => {
+  const { payload } = req.body;
+  if (!payload || typeof payload !== "object") {
+    return res.status(400).json({ error: "payload must be a flat dictionary object" });
+  }
+
+  // Always write locally as a hot cache backup
+  const dbData = readServerDb();
+  const merged = { ...dbData, ...payload };
+  writeServerDb(merged);
+
+  if (firestoreDb) {
+    try {
+      const writePromises = Object.entries(payload).map(async ([key, value]) => {
+        await firestoreDb.collection("kv_store").doc(key).set({ value, updatedAt: new Date().toISOString() });
+      });
+      await Promise.all(writePromises);
+      console.log(`Backend batch-saved ${Object.keys(payload).length} keys securely to Firebase Cloud Firestore via Admin SDK.`);
+      return res.json({ success: true, stored: "firestore" });
+    } catch (err: any) {
+      console.error("Firebase Firestore batch write error:", err);
+    }
+  }
+
+  res.json({ success: true, stored: "local" });
 });
 
 // Vite middleware development / static files production

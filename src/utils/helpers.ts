@@ -5,7 +5,7 @@
 import { Customer, ServiceJob, ServiceItem, InventoryItem } from "../types";
 
 /**
- * Format currency to Indian Rupees (standard for INR and local CCTV businesses in general)
+ * Format currency to Indian Rupees (standard format for INR and local businesses in general)
  */
 export const formatCurrency = (amt: number): string => {
   return new Intl.NumberFormat("en-IN", {

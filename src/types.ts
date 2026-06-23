@@ -91,14 +91,7 @@ export interface ServiceItem {
 }
 
 export type PaymentStatus = "Unpaid" | "Partial" | "Paid";
-export type PaymentMethod =
-  | "Cash"
-  | "UPI"
-  | "Card"
-  | "Bank Transfer"
-  | "Online"
-  | "Cheque"
-  | "Credit";
+export type PaymentMethod = string;
 
 export interface ServiceJob {
   id: string; // jobNo e.g. "INVSRV-2026-0001"
@@ -112,6 +105,7 @@ export interface ServiceJob {
   paidAmount: number;
   paidDate?: string;
   createdAt: string;
+  paymentNotes?: string; // Cheque numbers, cash drawer codes, or credit terms
 }
 
 export interface InventoryItem {
@@ -151,3 +145,39 @@ export interface WhatsAppTemplate {
   status: JobStatus;
   template: string;
 }
+
+export type SubscriptionPlan = "Free" | "Premium";
+
+export interface SubscriptionPayment {
+  id: string;
+  date: string;
+  amount: number;
+  plan: SubscriptionPlan;
+  paymentMethod: string;
+  transactionId: string;
+}
+
+export interface SubscriptionDetail {
+  plan: SubscriptionPlan;
+  status: "Active" | "Expired" | "Trial";
+  startDate: string;
+  expiryDate: string;
+  paymentHistory: SubscriptionPayment[];
+}
+
+export const PLAN_LIMITS = {
+  Free: {
+    customers: 999999,
+    services: 999999,
+    inventory: 999999,
+    label: "Full-Access Operational Plan"
+  },
+  Premium: {
+    customers: 999999,
+    services: 999999,
+    inventory: 999999,
+    label: "Full-Access Operational Plan"
+  }
+};
+
+

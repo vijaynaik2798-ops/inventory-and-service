@@ -20,7 +20,7 @@ The following payloads represent targeted attacks attempting to breach system se
 2. **Impersonated Author UID field**: User `attacker123` attempts to write a Stock Movement Log with `operatorName: "Vijay Naik"` or setting the creator ID of another document to a different UID.
 
 ### State Shortcutting & Phantom Fields
-3. **Ghost Fields injection**: A malicious user attempts to update a CCTV product catalog adding extra fields like `isApprovedByOwner: true` or `discountCode: "100FREE"`.
+3. **Ghost Fields injection**: A malicious user attempts to update a product catalog adding extra fields like `isApprovedByOwner: true` or `discountCode: "100FREE"`.
 4. **Terminal State override**: An operator attempts to alter a Service Job currently marked as `Delivered` back to `Received` to tamper with historical pricing records.
 
 ### Resource Poisoning & Denial of Wallet
@@ -28,7 +28,7 @@ The following payloads represent targeted attacks attempting to breach system se
 6. **Malicious Negative Quantity**: Attempting to set an inventory stock item quantity to a negative number or a non-integer float.
 
 ### Spatial Bypass & Orphan Writes
-7. **Orphan Log without CCTV Reference**: Creating a Stock Movement Log targeting a non-existent or deleted hardware element ID.
+7. **Orphan Log without Hardware Reference**: Creating a Stock Movement Log targeting a non-existent or deleted hardware element ID.
 8. **Malicious Empty Name Input**: Registering a customer profile with an empty string or a name of more than 500 characters.
 
 ### Privilege Escalation & Cross-tenant leaking

@@ -16,18 +16,24 @@ import {
   Staff,
   WhatsAppTemplate,
   User,
-  JobStatus
+  JobStatus,
+  SubscriptionDetail,
+  SubscriptionPlan
 } from "./types";
 import {
   loadAllData,
   saveCustomers,
   saveServices,
   saveInventory,
-  saveLocations,
+  saveServiceLocations,
+  saveStockLocations,
   saveTechnicians,
   saveSession,
   saveWaTemplates,
-  getCloudItem
+  getCloudItem,
+  saveJobCounter,
+  savePaymentMethods,
+  saveSubscription
 } from "./utils/storage";
 
 import {
@@ -179,7 +185,25 @@ export default function App() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [services, setServices] = useState<ServiceJob[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [locations, setLocations] = useState<string[]>([]);
+  const [serviceLocations, setServiceLocations] = useState<string[]>([]);
+  const [stockLocations, setStockLocations] = useState<string[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
+  const [subscription, setSubscription] = useState<SubscriptionDetail>({
+    plan: "Premium",
+    status: "Active",
+    startDate: new Date().toISOString().split("T")[0],
+    expiryDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    paymentHistory: [
+      {
+        id: "TRIAL-" + Math.random().toString(36).substring(2, 11).toUpperCase(),
+        date: new Date().toISOString().split("T")[0],
+        amount: 0,
+        plan: "Premium",
+        paymentMethod: "Free Trial Integration",
+        transactionId: "TRIAL-INIT"
+      }
+    ]
+  });
   const [technicians, setTechnicians] = useState<Staff[]>([]);
   const [waTemplates, setWaTemplates] = useState<WhatsAppTemplate[]>([]);
 
@@ -191,6 +215,20 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     return params.get("track") || params.get("job") || params.get("jobNo") || null;
   });
+
+  // Load item by URL query param
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const itemIdParam = params.get("itemId") || params.get("item");
+    if (itemIdParam && currentUser) {
+      setCurrentTab("stock");
+      // Give some time for StockTab to mount, and set a custom trigger
+      setTriggeredModal(`viewItem:${itemIdParam}`);
+      // Remove query parameters from URL to avoid loop or messy reload
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, "", newUrl);
+    }
+  }, [currentUser]);
 
   // Theme settings
   const [dark, setDark] = useState(() => {
@@ -232,15 +270,13 @@ export default function App() {
       setCustomers(data.customers);
       setServices(data.services);
       setInventory(data.inventory);
-      setLocations(data.locations);
+      setServiceLocations(data.serviceLocations);
+      setStockLocations(data.stockLocations);
+      setPaymentMethods(data.paymentMethods);
+      setSubscription(data.subscription);
       setTechnicians(data.technicians);
       setUsers(data.users);
       setWaTemplates(data.waTemplates);
-
-      // Restore session if active
-      if (!currentUser && data.activeSession) {
-        setCurrentUser(data.activeSession);
-      }
 
       setSyncStatus("live");
       if (!silently) showToast("Live Sync Complete · Synced ☁", "success");
@@ -267,7 +303,9 @@ export default function App() {
     customers,
     services,
     inventory,
-    locations,
+    serviceLocations,
+    stockLocations,
+    paymentMethods,
     technicians,
     users,
     waTemplates,
@@ -280,14 +318,16 @@ export default function App() {
       customers,
       services,
       inventory,
-      locations,
+      serviceLocations,
+      stockLocations,
+      paymentMethods,
       technicians,
       users,
       waTemplates,
       currentUser,
       syncStatus
     };
-  }, [customers, services, inventory, locations, technicians, users, waTemplates, currentUser, syncStatus]);
+  }, [customers, services, inventory, serviceLocations, stockLocations, paymentMethods, technicians, users, waTemplates, currentUser, syncStatus]);
 
   useEffect(() => {
     const backupInterval = setInterval(async () => {
@@ -295,7 +335,9 @@ export default function App() {
         customers,
         services,
         inventory,
-        locations,
+        serviceLocations,
+        stockLocations,
+        paymentMethods,
         technicians,
         users,
         waTemplates,
@@ -318,7 +360,9 @@ export default function App() {
           customers,
           services,
           inventory,
-          locations,
+          serviceLocations,
+          stockLocations,
+          paymentMethods,
           technicians,
           users,
           waTemplates,
@@ -427,23 +471,76 @@ export default function App() {
     }
   };
 
-  const handleAddCustomLocation = async (loc: string) => {
+  const handleAddCustomServiceLocation = async (loc: string) => {
     try {
-      const expandedList = [...locations, loc];
-      setLocations(expandedList);
-      await saveLocations(expandedList);
+      const expandedList = [...serviceLocations, loc];
+      setServiceLocations(expandedList);
+      await saveServiceLocations(expandedList);
     } catch (e) {
-      showToast("Location sync failed.", "error");
+      showToast("Service location sync failed.", "error");
     }
   };
 
-  const handleUpdateLocations = async (locs: string[]) => {
+  const handleUpdateServiceLocations = async (locs: string[]) => {
     try {
-      setLocations(locs);
-      await saveLocations(locs);
-      showToast("Locations sync completed · Synced ☁", "success");
+      setServiceLocations(locs);
+      await saveServiceLocations(locs);
+      showToast("Service spots sync completed · Synced ☁", "success");
     } catch (e) {
-      showToast("Locations saving failed.", "error");
+      showToast("Service spots saving failed.", "error");
+    }
+  };
+
+  const handleUpdateStockLocations = async (locs: string[]) => {
+    try {
+      setStockLocations(locs);
+      await saveStockLocations(locs);
+      showToast("Stock spots sync completed · Synced ☁", "success");
+    } catch (e) {
+      showToast("Stock spots saving failed.", "error");
+    }
+  };
+
+  const handleUpdatePaymentMethods = async (methods: string[]) => {
+    try {
+      setPaymentMethods(methods);
+      await savePaymentMethods(methods);
+      showToast("Payment options updated successfully · Synced ☁", "success");
+    } catch (e) {
+      showToast("Payment options saving failed.", "error");
+    }
+  };
+
+  const handleUpdateSubscription = async (sub: SubscriptionDetail) => {
+    try {
+      setSubscription(sub);
+      await saveSubscription(sub);
+    } catch (e) {
+      showToast("Subscription saving failed.", "error");
+    }
+  };
+
+  const handleAddCustomStockLocation = async (loc: string) => {
+    try {
+      const expandedList = [...stockLocations, loc];
+      setStockLocations(expandedList);
+      await saveStockLocations(expandedList);
+    } catch (e) {
+      showToast("Stock location sync failed.", "error");
+    }
+  };
+
+  const handleResetAllData = async () => {
+    try {
+      setCustomers([]);
+      setServices([]);
+      setInventory([]);
+      await saveCustomers([]);
+      await saveServices([]);
+      await saveInventory([]);
+      await saveJobCounter(0);
+    } catch (e) {
+      console.error("Failed to wipe databases on storage level", e);
     }
   };
 
@@ -578,6 +675,7 @@ export default function App() {
                   customers={customers}
                   services={services}
                   currentUser={currentUser}
+                  subscription={subscription}
                   onAddCustomer={handleAddCustomer}
                   onEditCustomer={handleEditCustomer}
                   showToast={showToast}
@@ -595,12 +693,14 @@ export default function App() {
                   services={services}
                   customers={customers}
                   technicians={technicians}
-                  locations={locations}
+                  locations={serviceLocations}
+                  paymentMethods={paymentMethods}
                   waTemplates={waTemplates}
                   currentUser={currentUser}
+                  subscription={subscription}
                   onAddJob={handleAddJob}
                   onUpdateJob={handleUpdateJob}
-                  onAddCustomLocation={handleAddCustomLocation}
+                  onAddCustomLocation={handleAddCustomServiceLocation}
                   onAddCustomer={handleAddCustomer}
                   showToast={showToast}
                 />
@@ -610,26 +710,38 @@ export default function App() {
                 <StockTab
                   inventory={inventory}
                   currentUser={currentUser}
+                  subscription={subscription}
                   onAddInventoryItem={handleAddInventoryItem}
                   onUpdateInventoryItem={handleUpdateInventoryItem}
+                  locations={stockLocations}
+                  onAddCustomLocation={handleAddCustomStockLocation}
                   showToast={showToast}
+                  triggeredModal={triggeredModal}
+                  setTriggeredModal={setTriggeredModal}
                 />
               )}
 
               {currentTab === "more" && (
                 <MoreTab
                   technicians={technicians}
-                  locations={locations}
+                  serviceLocations={serviceLocations}
+                  stockLocations={stockLocations}
+                  paymentMethods={paymentMethods}
                   waTemplates={waTemplates}
                   customers={customers}
                   services={services}
                   inventory={inventory}
                   currentUser={currentUser}
+                  subscription={subscription}
+                  onUpdateSubscription={handleUpdateSubscription}
                   onUpdateTechnicians={handleUpdateTechnicians}
-                  onUpdateLocations={handleUpdateLocations}
+                  onUpdateServiceLocations={handleUpdateServiceLocations}
+                  onUpdateStockLocations={handleUpdateStockLocations}
+                  onUpdatePaymentMethods={handleUpdatePaymentMethods}
                   onUpdateWaTemplates={handleUpdateWaTemplates}
                   onLogout={handleLogout}
                   showToast={showToast}
+                  onResetAllData={handleResetAllData}
                 />
               )}
             </div>

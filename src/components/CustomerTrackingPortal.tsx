@@ -98,7 +98,7 @@ export default function CustomerTrackingPortal({
               Client Status Tracker
             </h1>
             <p className="text-[10px] text-gray-400 dark:text-stone-400 font-medium tracking-tight mt-1">
-              Durable CCTV & Electronic Assets Portal
+              Durable Service & Live Stock Assets Portal
             </p>
           </div>
         </div>
@@ -455,7 +455,7 @@ export default function CustomerTrackingPortal({
             <div className="text-center py-5 space-y-1">
               <p className="text-[9px] font-bold text-gray-400 dark:text-stone-500 uppercase tracking-widest flex items-center justify-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-blue-550" />
-                <span>Secure End-To-End Enterprise Logistics</span>
+                <span>Verified End-To-End Enterprise Logistics</span>
               </p>
               <p className="text-[8.5px] text-gray-400 dark:text-stone-600 max-w-xs mx-auto leading-relaxed">
                 Statuses update in real-time. For manual modifications or inquiries regarding spares billing, please coordinate with our support team.

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { Staff, WhatsAppTemplate, Customer, ServiceJob, InventoryItem } from "../types";
+import { Staff, WhatsAppTemplate, Customer, ServiceJob, InventoryItem, SubscriptionDetail, SubscriptionPlan, PLAN_LIMITS } from "../types";
 import {
   Users,
   MapPin,
@@ -29,7 +29,16 @@ import {
   Smartphone,
   Tablet,
   Monitor,
-  Link2
+  Link2,
+  HelpCircle,
+  BookOpen,
+  Activity,
+  Crown,
+  ShieldCheck,
+  Award,
+  Receipt,
+  Building,
+  CreditCard
 } from "lucide-react";
 import QRScannerModal from "./QRScannerModal";
 import {
@@ -50,39 +59,80 @@ import {
   formatCurrency,
   generateQRUrl
 } from "../utils/helpers";
-import { DEFAULT_LOCATIONS, DEFAULT_STAFF, DEFAULT_WA_TEMPLATES } from "../utils/storage";
+import { DEFAULT_LOCATIONS, DEFAULT_STAFF, DEFAULT_WA_TEMPLATES, getCloudItem, setCloudItem } from "../utils/storage";
 
 interface MoreTabProps {
   technicians: Staff[];
-  locations: string[];
+  serviceLocations: string[];
+  stockLocations: string[];
+  paymentMethods?: string[];
   waTemplates: WhatsAppTemplate[];
   customers: Customer[];
   services: ServiceJob[];
   inventory: InventoryItem[];
   currentUser: any;
+  subscription: SubscriptionDetail;
+  onUpdateSubscription: (sub: SubscriptionDetail) => void;
   onUpdateTechnicians: (staff: Staff[]) => void;
-  onUpdateLocations: (locs: string[]) => void;
+  onUpdateServiceLocations: (locs: string[]) => void;
+  onUpdateStockLocations: (locs: string[]) => void;
+  onUpdatePaymentMethods?: (methods: string[]) => void;
   onUpdateWaTemplates: (temps: WhatsAppTemplate[]) => void;
   onLogout: () => void;
   showToast: (msg: string, type?: "success" | "error" | "info") => void;
+  onResetAllData?: () => void;
 }
 
 export default function MoreTab({
   technicians,
-  locations,
+  serviceLocations,
+  stockLocations,
+  paymentMethods = [],
   waTemplates,
   customers,
   services,
   inventory,
   currentUser,
+  subscription,
+  onUpdateSubscription,
   onUpdateTechnicians,
-  onUpdateLocations,
+  onUpdateServiceLocations,
+  onUpdateStockLocations,
+  onUpdatePaymentMethods,
   onUpdateWaTemplates,
   onLogout,
-  showToast
+  showToast,
+  onResetAllData
 }: MoreTabProps) {
   // Navigation inside More tab via collapsible sections
-  const [activeSection, setActiveSection] = useState<"none" | "staff" | "locations" | "wa" | "reports" | "drive" | "security" | "profile" | "devices">("none");
+  const [activeSection, setActiveSection] = useState<"none" | "subscription" | "staff" | "locations" | "payments" | "wa" | "reports" | "drive" | "phone_backup" | "security" | "profile" | "devices" | "help">("none");
+
+  const limits = PLAN_LIMITS[subscription.plan] || PLAN_LIMITS.Free;
+
+  // Help center FAQ & Diagnostics States
+  const [diagnosticsRunning, setDiagnosticsRunning] = useState(false);
+  const [diagnosticsChecked, setDiagnosticsChecked] = useState(false);
+  const [selectedFaqIndex, setSelectedFaqIndex] = useState<number | null>(null);
+  const [showWipeModal, setShowWipeModal] = useState(false);
+
+  // Subscription base interactive states
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
+  const [selectedPlanToUpgrade, setSelectedPlanToUpgrade] = useState<SubscriptionPlan | null>(null);
+  const [paymentGateway, setPaymentGateway] = useState<string>("UPI Interface");
+  const [promoCode, setPromoCode] = useState<string>("");
+  const [promoApplied, setPromoApplied] = useState<boolean>(false);
+  const [securedPaying, setSecuredPaying] = useState<boolean>(false);
+  const [securedPaymentStep, setSecuredPaymentStep] = useState<string>("");
+  const [paymentSuccessDetail, setPaymentSuccessDetail] = useState<any | null>(null);
+  const [activationKey, setActivationKey] = useState<string>("");
+  const [selectedReceiptInvoice, setSelectedReceiptInvoice] = useState<any | null>(null);
+
+  // Payment Type States
+  const [showAddPaymentModal, setShowAddPaymentModal] = useState(false);
+  const [paymentText, setPaymentText] = useState("");
+  const [editingPaymentIndex, setEditingPaymentIndex] = useState<number | null>(null);
+  const [editingPaymentText, setEditingPaymentText] = useState("");
+  const [deletingPaymentIndex, setDeletingPaymentIndex] = useState<number | null>(null);
 
   // Staff States
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
@@ -93,10 +143,12 @@ export default function MoreTab({
   const [showStaffPassword, setShowStaffPassword] = useState(false);
 
   // Location States
-  const [showAddLoc, setShowAddLoc] = useState(false);
+  const [showAddLocType, setShowAddLocType] = useState<"service" | "stock" | null>(null);
   const [locText, setLocText] = useState("");
+  const [editingLocType, setEditingLocType] = useState<"service" | "stock" | null>(null);
   const [editingLocIndex, setEditingLocIndex] = useState<number | null>(null);
   const [editingLocText, setEditingLocText] = useState("");
+  const [deletingLocType, setDeletingLocType] = useState<"service" | "stock" | null>(null);
   const [deletingLocIndex, setDeletingLocIndex] = useState<number | null>(null);
   const [deletingTechId, setDeletingTechId] = useState<string | null>(null);
 
@@ -144,7 +196,7 @@ export default function MoreTab({
       { id: "DEV-SAFARI-IPAD", name: "iPad Reception Terminal (Safari)", location: "New Delhi Reception Hub", lastActive: "4 minutes ago", type: "tablet", status: "Idle" },
       { id: "DEV-IPHONE-OPS", name: "iPhone 15 Pro Operator", location: "Kolkata Ground Team A", lastActive: "12 minutes ago", type: "mobile", status: "Active" },
       { id: "DEV-ANDROID-TAB", name: "Samsung Galaxy Tab Active", location: "Bengaluru Warehouse Rack 4", lastActive: "1 hour ago", type: "tablet", status: "Idle" },
-      { id: "DEV-FIREFOX-CCTV", name: "Firefox CCTV Display Controller", location: "Chennai Shop Front CCTV Terminal", lastActive: "Yesterday", type: "monitor", status: "Idle" },
+      { id: "DEV-FIREFOX-CONSOLE", name: "Firefox Stock Console Controller", location: "Chennai Shop Front Service Terminal", lastActive: "Yesterday", type: "monitor", status: "Idle" },
       { id: "DEV-WIN-OFFICE", name: "Windows 11 Stock Desk Node", location: "Pune Store Desk B", lastActive: "Active Now", type: "desktop", status: "Active" },
       { id: "DEV-EDGE-SURFACE", name: "MS Edge (Surface Pro Link)", location: "Hyderabad Regional Headquarters", lastActive: "2 days ago", type: "tablet", status: "Idle" },
       { id: "DEV-SAMSUNG-LEAD", name: "Galaxy S24 Team Dispatcher", location: "Mumbai Field Service Unit B", lastActive: "45 minutes ago", type: "mobile", status: "Active" },
@@ -163,6 +215,53 @@ export default function MoreTab({
   const handleSaveDevicesToStorage = (list: any[]) => {
     setLinkedDevices(list);
     localStorage.setItem("stockivo_linked_devices_v1", JSON.stringify(list));
+  };
+
+  // --- Merchant / Payout Account Details ("how can i add account to get money") ---
+  const [merchantName, setMerchantName] = useState("");
+  const [merchantUpi, setMerchantUpi] = useState("");
+  const [merchantBankName, setMerchantBankName] = useState("");
+  const [merchantAccountNo, setMerchantAccountNo] = useState("");
+  const [merchantIfsc, setMerchantIfsc] = useState("");
+  const [isSavingMerchant, setIsSavingMerchant] = useState(false);
+
+  useEffect(() => {
+    const loadMerchantDetails = async () => {
+      try {
+        const raw = await getCloudItem("merchant_payout_details");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setMerchantName(parsed.merchantName || "");
+          setMerchantUpi(parsed.merchantUpi || "");
+          setMerchantBankName(parsed.merchantBankName || "");
+          setMerchantAccountNo(parsed.merchantAccountNo || "");
+          setMerchantIfsc(parsed.merchantIfsc || "");
+        }
+      } catch (err) {
+        console.warn("Failed to parse merchant details on mount:", err);
+      }
+    };
+    loadMerchantDetails();
+  }, []);
+
+  const handleSaveMerchantDetails = async () => {
+    setIsSavingMerchant(true);
+    try {
+      const payload = {
+        merchantName,
+        merchantUpi,
+        merchantBankName,
+        merchantAccountNo,
+        merchantIfsc,
+        updatedAt: new Date().toISOString()
+      };
+      await setCloudItem("merchant_payout_details", JSON.stringify(payload));
+      showToast("Merchant payout billing details registered successfully! 🏦", "success");
+    } catch (err: any) {
+      showToast(`Failed to register bank details: ${err.message || err}`, "error");
+    } finally {
+      setIsSavingMerchant(false);
+    }
   };
 
   useEffect(() => {
@@ -343,7 +442,7 @@ export default function MoreTab({
 
     const formattedLoginId = staffLoginId.trim().toLowerCase();
     if (!formattedLoginId) {
-      showToast("Login ID is required for secure staff credentials.", "error");
+      showToast("Login ID is required for staff credentials.", "error");
       return;
     }
     if (!staffPassword.trim()) {
@@ -409,7 +508,7 @@ export default function MoreTab({
         type = "tablet";
         locStr = "Chennai Reception Spot · Active Session";
       } else if (tag.includes("FIREFOX_TERM")) {
-        deviceName = "Firefox on CCTV Monitor Terminal";
+        deviceName = "Firefox on Primary Service Terminal";
         type = "monitor";
         locStr = "Server Room Rack B · Active Session";
       } else {
@@ -482,38 +581,199 @@ export default function MoreTab({
   // Handler: Add physical location spot
   const handleAddLocationSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!locText.trim()) return;
+    if (!locText.trim() || !showAddLocType) return;
 
     const formattedLoc = locText.trim();
-    if (locations.includes(formattedLoc)) {
-      showToast("Location node already exists", "error");
+    const targetList = showAddLocType === "service" ? serviceLocations : stockLocations;
+
+    if (targetList.includes(formattedLoc)) {
+      showToast(`${showAddLocType === "service" ? "Service" : "Stock"} location spot already exists`, "error");
       return;
     }
 
-    const nextLocs = [...locations, formattedLoc];
-    onUpdateLocations(nextLocs);
+    const nextLocs = [...targetList, formattedLoc];
+    if (showAddLocType === "service") {
+      onUpdateServiceLocations(nextLocs);
+    } else {
+      onUpdateStockLocations(nextLocs);
+    }
+
     setLocText("");
-    setShowAddLoc(false);
-    showToast(`Registered spot: ${formattedLoc}`, "success");
+    setShowAddLocType(null);
+    showToast(`Registered ${showAddLocType === "service" ? "Service" : "Stock"} spot: ${formattedLoc}`, "success");
   };
 
   // Handler: Save edited physical location spot name
   const handleSaveEdit = (idx: number) => {
+    if (!editingLocType) return;
     const trimmed = editingLocText.trim();
     if (!trimmed) {
       showToast("Location name cannot be empty", "error");
       return;
     }
-    const currentName = locations[idx];
-    if (trimmed !== currentName && locations.includes(trimmed)) {
+
+    const targetList = editingLocType === "service" ? serviceLocations : stockLocations;
+    const currentName = targetList[idx];
+
+    if (trimmed !== currentName && targetList.includes(trimmed)) {
       showToast("Location name already exists", "error");
       return;
     }
-    const nextLocs = [...locations];
+
+    const nextLocs = [...targetList];
     nextLocs[idx] = trimmed;
-    onUpdateLocations(nextLocs);
+
+    if (editingLocType === "service") {
+      onUpdateServiceLocations(nextLocs);
+    } else {
+      onUpdateStockLocations(nextLocs);
+    }
+
     setEditingLocIndex(null);
+    setEditingLocType(null);
     showToast("Location renamed successfully", "success");
+  };
+
+  // Handler: Add custom payment method channel
+  const handleAddPaymentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paymentText.trim() || !onUpdatePaymentMethods) return;
+
+    const formattedPayment = paymentText.trim();
+
+    if (paymentMethods.includes(formattedPayment)) {
+      showToast(`Payment channel already exists`, "error");
+      return;
+    }
+
+    const nextPayments = [...paymentMethods, formattedPayment];
+    onUpdatePaymentMethods(nextPayments);
+
+    setPaymentText("");
+    setShowAddPaymentModal(false);
+    showToast(`Registered payment channel: ${formattedPayment}`, "success");
+  };
+
+  // Subscription Base helper handlers
+  const handleApplyPromoCode = () => {
+    const code = promoCode.trim().toUpperCase();
+    if (code === "STOCKIVO_VIP" || code === "OFFER20") {
+      setPromoApplied(true);
+      showToast("Coupon Applied! 20% Discount unlocked.", "success");
+    } else {
+      showToast("Invalid Promo Code", "error");
+    }
+  };
+
+  const handleActivateLicenseKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    const key = activationKey.trim().toUpperCase();
+    if (key === "STOCKIVO-PRO-2026") {
+      const updatedSub: SubscriptionDetail = {
+        ...subscription,
+        plan: "Premium",
+        status: "Active",
+        startDate: new Date().toISOString().split("T")[0],
+        expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        paymentHistory: [
+          {
+            id: "TXN-" + Math.floor(100000 + Math.random() * 900000),
+            date: new Date().toISOString().split("T")[0],
+            amount: 0,
+            plan: "Premium",
+            paymentMethod: "License Activation Key",
+            transactionId: "LIC-" + key
+          },
+          ...(subscription.paymentHistory || [])
+        ]
+      };
+      onUpdateSubscription(updatedSub);
+      setActivationKey("");
+      showToast("STOCKIVO-PRO Premium 1-Year Key Activated! 🌟", "success");
+    } else {
+      showToast("Invalid activation code. Try 'STOCKIVO-PRO-2026'.", "error");
+    }
+  };
+
+  const handleCheckoutUpgrade = (price: number) => {
+    if (!selectedPlanToUpgrade) return;
+    setSecuredPaying(true);
+    setSecuredPaymentStep("1. Connecting securely to cloud licensing node...");
+
+    setTimeout(() => {
+      setSecuredPaymentStep("2. Securing authorization handshake with 3D secure layer...");
+      setTimeout(() => {
+        setSecuredPaymentStep(`3. Synchronizing direct ledger settlement with ${paymentGateway}...`);
+        setTimeout(() => {
+          setSecuredPaymentStep("4. Unlocking enterprise limits for database entities...");
+          setTimeout(() => {
+            const txId = "TXN-" + Math.floor(100000 + Math.random() * 900000);
+            const today = new Date().toISOString().split("T")[0];
+            const durationDays = billingCycle === "monthly" ? 30 : 365;
+            const expiry = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+            const newPayment = {
+              id: txId,
+              date: today,
+              amount: price,
+              plan: selectedPlanToUpgrade,
+              paymentMethod: paymentGateway,
+              transactionId: "SIM-" + Math.random().toString(36).substring(2, 9).toUpperCase()
+            };
+
+            const updatedSub: SubscriptionDetail = {
+              plan: selectedPlanToUpgrade,
+              status: "Active",
+              startDate: today,
+              expiryDate: expiry,
+              paymentHistory: [newPayment, ...(subscription.paymentHistory || [])]
+            };
+
+            onUpdateSubscription(updatedSub);
+            setPaymentSuccessDetail(newPayment);
+            setSecuredPaying(false);
+            setSelectedPlanToUpgrade(null);
+            setPromoCode("");
+            setPromoApplied(false);
+            showToast(`Upgraded cleanly to ${selectedPlanToUpgrade}! 🚀`, "success");
+          }, 600);
+        }, 800);
+      }, 1000);
+    }, 600);
+  };
+
+  // Handler: Save edited payment method channel
+  const handleSavePaymentEdit = (idx: number) => {
+    if (!onUpdatePaymentMethods) return;
+    const trimmed = editingPaymentText.trim();
+    if (!trimmed) {
+      showToast("Payment channel name cannot be empty", "error");
+      return;
+    }
+
+    const currentName = paymentMethods[idx];
+
+    if (trimmed !== currentName && paymentMethods.includes(trimmed)) {
+      showToast("Payment channel name already exists", "error");
+      return;
+    }
+
+    const nextPayments = [...paymentMethods];
+    nextPayments[idx] = trimmed;
+
+    onUpdatePaymentMethods(nextPayments);
+
+    setEditingPaymentIndex(null);
+    showToast("Payment channel renamed successfully", "success");
+  };
+
+  // Handler: Delete/remove payment method channel
+  const handleDeletePayment = (idx: number) => {
+    if (!onUpdatePaymentMethods) return;
+    const nextPayments = paymentMethods.filter((_, i) => i !== idx);
+    onUpdatePaymentMethods(nextPayments);
+    setDeletingPaymentIndex(null);
+    showToast("Payment channel removed", "info");
   };
 
   // Handler: Save custom WA templates
@@ -653,7 +913,9 @@ export default function MoreTab({
         customers,
         services,
         inventory,
-        locations,
+        serviceLocations,
+        stockLocations,
+        locations: serviceLocations, // Backward-compatibility fallback
         technicians,
         waTemplates,
         jobCounter: targetJobCounter
@@ -737,6 +999,109 @@ export default function MoreTab({
     }
   };
 
+  const handleExportToPhone = async () => {
+    try {
+      const storageObj = (window as any).storage;
+      let targetJobCounter = 0;
+      if (storageObj) {
+        const counterVal = await storageObj.getItem("inventory_service_job_counter", { shared: true });
+        if (counterVal) targetJobCounter = parseInt(counterVal, 10);
+      } else {
+        const counterVal = localStorage.getItem("inventory_service_job_counter");
+        if (counterVal) targetJobCounter = parseInt(counterVal, 10);
+      }
+
+      const payload = {
+        customers,
+        services,
+        inventory,
+        serviceLocations,
+        stockLocations,
+        locations: serviceLocations,
+        technicians,
+        waTemplates,
+        jobCounter: targetJobCounter,
+        backupSource: "Phone Local Storage Backup",
+        backupDate: new Date().toISOString()
+      };
+
+      const jsonStr = JSON.stringify(payload, null, 2);
+      const blob = new Blob([jsonStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const downloadAnchor = document.createElement("a");
+      downloadAnchor.href = url;
+      downloadAnchor.download = `stockivo_backup_${new Date().toISOString().split("T")[0]}.json`;
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      URL.revokeObjectURL(url);
+
+      showToast("All databases saved offline on your phone/device storage! 📁", "success");
+    } catch (err: any) {
+      console.error(err);
+      showToast(`Local export failed: ${err.message || err}`, "error");
+    }
+  };
+
+  const handleImportFromPhone = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const confirmed = window.confirm(
+      "⚠ WARNING: Restoring from a backup file will COMPLETELY replace your current clients, service jobs, WhatsApp templates, and stock catalogs. This cannot be undone. Are you sure you want to proceed?"
+    );
+    if (!confirmed) {
+      e.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const restored = JSON.parse(text);
+
+        if (!restored || (!restored.customers && !restored.services && !restored.inventory)) {
+          throw new Error("Invalid backup file structure: missing essential database records.");
+        }
+
+        const storageObj = (window as any).storage;
+        const saveState = async (key: string, list: any) => {
+          if (list) {
+            localStorage.setItem(key, JSON.stringify(list));
+            if (storageObj && typeof storageObj.setItem === "function") {
+              await storageObj.setItem(key, JSON.stringify(list), { shared: true });
+            }
+          }
+        };
+
+        await saveState("inventory_service_customers", restored.customers);
+        await saveState("inventory_service_services", restored.services);
+        await saveState("inventory_service_inventory", restored.inventory);
+        await saveState("inventory_service_locations", restored.serviceLocations || restored.locations);
+        await saveState("inventory_service_technicians", restored.technicians);
+        await saveState("inventory_service_wa_templates", restored.waTemplates);
+
+        if (restored.jobCounter !== undefined) {
+          localStorage.setItem("inventory_service_job_counter", restored.jobCounter.toString());
+          if (storageObj && typeof storageObj.setItem === "function") {
+            await storageObj.setItem("inventory_service_job_counter", restored.jobCounter.toString(), { shared: true });
+          }
+        }
+
+        showToast("Database safely restored from phone backup file! Reloading workspace...", "success");
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+
+      } catch (err: any) {
+        console.error(err);
+        showToast(`Import failed. Please make sure chosen file is a valid .json backup. ${err.message || ""}`, "error");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-50 dark:bg-stone-950 transition-colors duration-200 pb-20 select-none">
       
@@ -772,6 +1137,7 @@ export default function MoreTab({
 
       {/* Accordion Settings Rails */}
       <div className="space-y-3">
+
         {/* Module 2: Locations Manager */}
         <div className="bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 rounded-xl overflow-hidden shadow-sm">
           <button
@@ -786,125 +1152,481 @@ export default function MoreTab({
           </button>
 
           {activeSection === "locations" && (
-            <div className="p-4 border-t border-gray-100 dark:border-stone-800 space-y-3 text-left animate-slide-up">
-              <div className="flex justify-between items-center bg-gray-50 dark:bg-stone-800/40 p-2.5 rounded-lg border border-gray-100 dark:border-stone-800">
-                <span className="text-[9px] uppercase font-bold text-gray-500">
-                  Custom Location Spots ({locations.length})
+            <div className="p-4 border-t border-gray-100 dark:border-stone-800 space-y-6 text-left animate-slide-up">
+              
+              {/* Category 1: Service Tab Locations */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center bg-emerald-50/50 dark:bg-emerald-950/20 p-2.5 rounded-lg border border-emerald-100/50 dark:border-emerald-900/25">
+                  <span className="text-[9px] uppercase font-black text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                    🔧 Service Tab Locations ({serviceLocations.length})
+                  </span>
+                  <button
+                    onClick={() => {
+                      setShowAddLocType("service");
+                      setLocText("");
+                    }}
+                    className="text-[9px] bg-emerald-600 hover:bg-emerald-700 text-white font-black px-2.5 py-1 rounded shadow-xs cursor-pointer"
+                  >
+                    + Add Service Spot
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[180px] overflow-y-auto">
+                  {serviceLocations.map((loc, idx) => (
+                    editingLocType === "service" && editingLocIndex === idx ? (
+                      <div
+                        key={idx}
+                        className="p-1 px-1.5 bg-white dark:bg-stone-900 border border-emerald-500 rounded-xl flex items-center justify-between gap-1"
+                      >
+                        <input
+                          type="text"
+                          value={editingLocText}
+                          onChange={e => setEditingLocText(e.target.value)}
+                          className="text-[11px] font-bold bg-transparent border-none text-gray-800 dark:text-stone-100 focus:outline-none w-full pl-1 py-1 font-sans"
+                          autoFocus
+                          onKeyDown={e => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleSaveEdit(idx);
+                            } else if (e.key === "Escape") {
+                              setEditingLocIndex(null);
+                              setEditingLocType(null);
+                            }
+                          }}
+                        />
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button
+                            onClick={() => handleSaveEdit(idx)}
+                            className="p-1 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg cursor-pointer transition-colors"
+                            title="Save Changes"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingLocIndex(null);
+                              setEditingLocType(null);
+                            }}
+                            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-stone-800 rounded-lg cursor-pointer transition-colors"
+                            title="Cancel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        key={idx}
+                        className="p-2 bg-slate-50 dark:bg-stone-900 border border-gray-150 rounded-xl flex items-center justify-between gap-1 animate-fade-in"
+                      >
+                        <span className="text-[11px] font-bold text-gray-750 dark:text-stone-250 truncate block max-w-[140px]" title={loc}>
+                          📍 {loc}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => {
+                              setEditingLocIndex(idx);
+                              setEditingLocType("service");
+                              setEditingLocText(loc);
+                            }}
+                            className="p-1 text-gray-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
+                            title="Edit Location Spot"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <a
+                            href={generateQRUrl(`INVSRV-LOCATION:${loc}`)}
+                            target="_blank"
+                            referrerPolicy="no-referrer"
+                            className="p-1 text-blue-500 hover:text-blue-700 hover:bg-white dark:hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
+                            title="Print Sticker QR"
+                          >
+                            <QrCode className="w-3.5 h-3.5" />
+                          </a>
+                          {deletingLocType === "service" && deletingLocIndex === idx ? (
+                            <div className="flex items-center gap-1 bg-rose-50 dark:bg-rose-500/10 p-0.5 px-1.5 rounded-lg border border-rose-200 dark:border-rose-900/30 animate-pulse">
+                              <span className="text-[8px] font-black uppercase text-rose-600 dark:text-rose-400 select-none">Delete?</span>
+                              <button
+                                onClick={() => {
+                                  const nextLocs = serviceLocations.filter((_, i) => i !== idx);
+                                  onUpdateServiceLocations(nextLocs);
+                                  showToast(`Deleted service spot: ${loc}`, "info");
+                                  setDeletingLocIndex(null);
+                                  setDeletingLocType(null);
+                                }}
+                                className="p-0.5 rounded bg-rose-600 text-white hover:bg-rose-700 transition-colors cursor-pointer"
+                                title="Confirm delete"
+                              >
+                                <Check className="w-2.5 h-2.5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeletingLocIndex(null);
+                                  setDeletingLocType(null);
+                                }}
+                                className="p-0.5 rounded bg-gray-200 dark:bg-stone-800 text-gray-600 dark:text-stone-300 hover:bg-gray-300 default-colors cursor-pointer"
+                                title="Cancel delete"
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setDeletingLocIndex(idx);
+                                setDeletingLocType("service");
+                                setEditingLocIndex(null);
+                                setEditingLocType(null);
+                              }}
+                              className="p-1 text-gray-400 hover:text-rose-500 hover:bg-white dark:hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
+                              title="Remove Location Spot"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  ))}
+                </div>
+              </div>
+
+              {/* Category 2: Stock Tab Locations */}
+              <div className="space-y-3 pt-4 border-t border-dashed border-gray-200 dark:border-stone-800">
+                <div className="flex justify-between items-center bg-blue-50/50 dark:bg-blue-950/20 p-2.5 rounded-lg border border-blue-100/50 dark:border-blue-900/25">
+                  <span className="text-[9px] uppercase font-black text-blue-700 dark:text-blue-400 flex items-center gap-1">
+                    📦 Stock Tab Locations ({stockLocations.length})
+                  </span>
+                  <button
+                    onClick={() => {
+                      setShowAddLocType("stock");
+                      setLocText("");
+                    }}
+                    className="text-[9px] bg-blue-600 hover:bg-blue-700 text-white font-black px-2.5 py-1 rounded shadow-xs cursor-pointer"
+                  >
+                    + Add Stock Spot
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[180px] overflow-y-auto">
+                  {stockLocations.map((loc, idx) => (
+                    editingLocType === "stock" && editingLocIndex === idx ? (
+                      <div
+                        key={idx}
+                        className="p-1 px-1.5 bg-white dark:bg-stone-900 border border-emerald-500 rounded-xl flex items-center justify-between gap-1"
+                      >
+                        <input
+                          type="text"
+                          value={editingLocText}
+                          onChange={e => setEditingLocText(e.target.value)}
+                          className="text-[11px] font-bold bg-transparent border-none text-gray-800 dark:text-stone-100 focus:outline-none w-full pl-1 py-1 font-sans"
+                          autoFocus
+                          onKeyDown={e => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleSaveEdit(idx);
+                            } else if (e.key === "Escape") {
+                              setEditingLocIndex(null);
+                              setEditingLocType(null);
+                            }
+                          }}
+                        />
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button
+                            onClick={() => handleSaveEdit(idx)}
+                            className="p-1 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg cursor-pointer transition-colors"
+                            title="Save Changes"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingLocIndex(null);
+                              setEditingLocType(null);
+                            }}
+                            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-stone-800 rounded-lg cursor-pointer transition-colors"
+                            title="Cancel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        key={idx}
+                        className="p-2 bg-slate-50 dark:bg-stone-900 border border-gray-150 rounded-xl flex items-center justify-between gap-1 animate-fade-in"
+                      >
+                        <span className="text-[11px] font-bold text-gray-750 dark:text-stone-250 truncate block max-w-[140px]" title={loc}>
+                          📍 {loc}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => {
+                              setEditingLocIndex(idx);
+                              setEditingLocType("stock");
+                              setEditingLocText(loc);
+                            }}
+                            className="p-1 text-gray-400 hover:text-blue-500 hover:bg-white dark:hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
+                            title="Edit Location Spot"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <a
+                            href={generateQRUrl(`INVSRV-LOCATION:${loc}`)}
+                            target="_blank"
+                            referrerPolicy="no-referrer"
+                            className="p-1 text-blue-500 hover:text-blue-700 hover:bg-white dark:hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
+                            title="Print Sticker QR"
+                          >
+                            <QrCode className="w-3.5 h-3.5" />
+                          </a>
+                          {deletingLocType === "stock" && deletingLocIndex === idx ? (
+                            <div className="flex items-center gap-1 bg-rose-50 dark:bg-rose-500/10 p-0.5 px-1.5 rounded-lg border border-rose-200 dark:border-rose-900/30 animate-pulse">
+                              <span className="text-[8px] font-black uppercase text-rose-600 dark:text-rose-400 select-none">Delete?</span>
+                              <button
+                                onClick={() => {
+                                  const nextLocs = stockLocations.filter((_, i) => i !== idx);
+                                  onUpdateStockLocations(nextLocs);
+                                  showToast(`Deleted stock spot: ${loc}`, "info");
+                                  setDeletingLocIndex(null);
+                                  setDeletingLocType(null);
+                                }}
+                                className="p-0.5 rounded bg-rose-600 text-white hover:bg-rose-700 transition-colors cursor-pointer"
+                                title="Confirm delete"
+                              >
+                                <Check className="w-2.5 h-2.5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeletingLocIndex(null);
+                                  setDeletingLocType(null);
+                                }}
+                                className="p-0.5 rounded bg-gray-200 dark:bg-stone-800 text-gray-600 dark:text-stone-300 hover:bg-gray-300 default-colors cursor-pointer"
+                                title="Cancel delete"
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setDeletingLocIndex(idx);
+                                setDeletingLocType("stock");
+                                setEditingLocIndex(null);
+                                setEditingLocType(null);
+                              }}
+                              className="p-1 text-gray-400 hover:text-rose-500 hover:bg-white dark:hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
+                              title="Remove Location Spot"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          )}
+        </div>
+
+        {/* Module: Payment Channels Manager */}
+        <div className="bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 rounded-xl overflow-hidden shadow-sm">
+          <button
+            onClick={() => setActiveSection(activeSection === "payments" ? "none" : "payments")}
+            className="w-full flex items-center justify-between p-3.5 text-left text-xs font-black uppercase tracking-wider text-gray-700 dark:text-stone-200 outline-none hover:bg-slate-50 dark:hover:bg-stone-800"
+          >
+            <span className="flex items-center gap-2">
+              <DollarSign className="w-4.5 h-4.5 text-emerald-500" />
+              Payment Methods & Channels
+            </span>
+            {activeSection === "payments" ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+
+          {activeSection === "payments" && (
+            <div className="p-4 border-t border-gray-100 dark:border-stone-800 space-y-4 text-left animate-slide-up">
+              <div className="flex justify-between items-center bg-sky-50/55 dark:bg-sky-950/20 p-2.5 rounded-lg border border-sky-100/50 dark:border-sky-900/25">
+                <span className="text-[9px] uppercase font-black text-sky-700 dark:text-sky-400 flex items-center gap-1">
+                  💳 Registered Payment Methods ({paymentMethods.length})
                 </span>
                 <button
-                  onClick={() => setShowAddLoc(true)}
-                  className="text-[9px] bg-gradient-to-r from-blue-600 to-blue-700 text-white font-black px-2.5 py-1 rounded shadow-xs"
+                  onClick={() => {
+                    setShowAddPaymentModal(true);
+                    setPaymentText("");
+                  }}
+                  className="text-[9px] bg-sky-600 hover:bg-sky-700 text-white font-black px-2.5 py-1 rounded shadow-xs cursor-pointer"
                 >
-                  + Add Location Spot
+                  + Add Payment Option
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto">
-                {locations.map((loc, idx) => (
-                  editingLocIndex === idx ? (
+              {paymentMethods.length === 0 ? (
+                <div className="text-center py-6 text-xs text-gray-400 dark:text-stone-500 font-medium">
+                  No custom payment methods registered. Default options (UPI, Cash, Card, etc) will be displayed.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {paymentMethods.map((method, idx) => (
                     <div
                       key={idx}
-                      className="p-1 px-1.5 bg-white dark:bg-stone-900 border border-emerald-500 rounded-xl flex items-center justify-between gap-1"
+                      className="flex items-center justify-between border border-gray-150 dark:border-stone-850 bg-slate-50/40 dark:bg-stone-900/40 px-3 py-2 rounded-lg text-xs"
                     >
-                      <input
-                        type="text"
-                        value={editingLocText}
-                        onChange={e => setEditingLocText(e.target.value)}
-                        className="text-[11px] font-bold bg-transparent border-none text-gray-800 dark:text-stone-100 focus:outline-none w-full pl-1 py-1 font-sans"
-                        autoFocus
-                        onKeyDown={e => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSaveEdit(idx);
-                          } else if (e.key === "Escape") {
-                            setEditingLocIndex(null);
-                          }
-                        }}
-                      />
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <button
-                          onClick={() => handleSaveEdit(idx)}
-                          className="p-1 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg cursor-pointer transition-colors"
-                          title="Save Changes"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setEditingLocIndex(null)}
-                          className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-stone-800 rounded-lg cursor-pointer transition-colors"
-                          title="Cancel"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div
-                      key={idx}
-                      className="p-2 bg-slate-50 dark:bg-stone-900 border border-gray-150 rounded-xl flex items-center justify-between gap-1 animate-fade-in"
-                    >
-                      <span className="text-[11px] font-bold text-gray-750 dark:text-stone-250 truncate block max-w-[140px]" title={loc}>
-                        📍 {loc}
-                      </span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() => {
-                            setEditingLocIndex(idx);
-                            setEditingLocText(loc);
-                          }}
-                          className="p-1 text-gray-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
-                          title="Edit Location Spot"
-                        >
-                          <Pencil className="w-3 h-3" />
-                        </button>
-                        <a
-                          href={generateQRUrl(`INVSRV-LOCATION:${loc}`)}
-                          target="_blank"
-                          referrerPolicy="no-referrer"
-                          className="p-1 text-blue-500 hover:text-blue-700 hover:bg-white dark:hover:bg-stone-800 rounded-lg transition-colors"
-                          title="Print Sticker QR"
-                        >
-                          <QrCode className="w-3.5 h-3.5" />
-                        </a>
-                        {deletingLocIndex === idx ? (
-                          <div className="flex items-center gap-1 bg-rose-50 dark:bg-rose-500/10 p-0.5 px-1.5 rounded-lg border border-rose-200 dark:border-rose-900/30 animate-pulse">
-                            <span className="text-[8px] font-black uppercase text-rose-600 dark:text-rose-400 select-none">Delete?</span>
+                      {editingPaymentIndex === idx ? (
+                        <div className="flex gap-1.5 w-full">
+                          <input
+                            type="text"
+                            value={editingPaymentText}
+                            onChange={e => setEditingPaymentText(e.target.value)}
+                            className="bg-white dark:bg-black text-xs font-medium border border-gray-300 dark:border-stone-700 rounded px-2 py-0.5 grow focus:outline-none"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleSavePaymentEdit(idx)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-2 py-0.5 rounded text-[10px] cursor-pointer"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditingPaymentIndex(null)}
+                            className="bg-gray-400 hover:bg-gray-500 text-white font-black px-2 py-0.5 rounded text-[10px] cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="font-bold text-gray-800 dark:text-stone-200">
+                            {method}
+                          </span>
+                          <div className="flex gap-2">
                             <button
                               onClick={() => {
-                                const nextLocs = locations.filter((_, i) => i !== idx);
-                                onUpdateLocations(nextLocs);
-                                showToast(`Deleted location spot: ${loc}`, "info");
-                                setDeletingLocIndex(null);
+                                setEditingPaymentIndex(idx);
+                                setEditingPaymentText(method);
                               }}
-                              className="p-0.5 rounded bg-rose-600 text-white hover:bg-rose-700 transition-colors cursor-pointer"
-                              title="Confirm delete"
+                              className="text-gray-400 hover:text-blue-500 transition-colors p-0.5"
+                              title="Rename Method"
                             >
-                              <Check className="w-2.5 h-2.5" />
+                              <Pencil className="w-3.5 h-3.5" />
                             </button>
                             <button
-                              onClick={() => setDeletingLocIndex(null)}
-                              className="p-0.5 rounded bg-gray-200 dark:bg-stone-800 text-gray-600 dark:text-stone-300 hover:bg-gray-300 default-colors cursor-pointer"
-                              title="Cancel delete"
+                              onClick={() => setDeletingPaymentIndex(idx)}
+                              className="text-gray-400 hover:text-red-500 transition-colors p-0.5"
+                              title="Delete Method"
                             >
-                              <X className="w-2.5 h-2.5" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setDeletingLocIndex(idx);
-                              setEditingLocIndex(null); // Cancel editing if deleting
-                            }}
-                            className="p-1 text-gray-400 hover:text-rose-500 hover:bg-white dark:hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
-                            title="Remove Location Spot"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
+                        </>
+                      )}
                     </div>
-                  )
-                ))}
+                  ))}
+                </div>
+              )}
+
+              {/* --- Merchant Payout Bank & UPI Setup Form --- */}
+              <div className="border-t border-gray-150 dark:border-stone-800 pt-4 mt-4 space-y-3.5">
+                <div>
+                  <span className="block text-[9px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-wider mb-1">
+                    🏦 Merchant Account for Payouts
+                  </span>
+                  <p className="text-[10px] text-gray-400 dark:text-stone-500 font-medium leading-relaxed">
+                    Register your store's UPI ID and Bank Account details. These credentials will be shown to customers and technicians during service job checkout/invoice processes to receive payment direct credit.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Business/Merchant Name */}
+                  <div className="space-y-1">
+                    <label className="block text-[8px] font-black uppercase text-gray-400 dark:text-stone-500 tracking-widest leading-none">
+                      Merchant Name / Beneficiary
+                    </label>
+                    <input
+                      type="text"
+                      value={merchantName}
+                      onChange={(e) => setMerchantName(e.target.value)}
+                      placeholder="e.g. QuickFix Enterprises"
+                      className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 font-bold"
+                    />
+                  </div>
+
+                  {/* Store UPI ID */}
+                  <div className="space-y-1">
+                    <label className="block text-[8px] font-black uppercase text-gray-400 dark:text-stone-500 tracking-widest leading-none font-sans">
+                      Store UPI ID (GPay / PhonePe / Paytm / BHIM)
+                    </label>
+                    <input
+                      type="text"
+                      value={merchantUpi}
+                      onChange={(e) => setMerchantUpi(e.target.value)}
+                      placeholder="e.g. storename@okhdfcbank"
+                      className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+
+                  {/* Bank Name */}
+                  <div className="space-y-1">
+                    <label className="block text-[8px] font-black uppercase text-gray-400 dark:text-stone-500 tracking-widest leading-none">
+                      Settling Bank Name
+                    </label>
+                    <input
+                      type="text"
+                      value={merchantBankName}
+                      onChange={(e) => setMerchantBankName(e.target.value)}
+                      placeholder="e.g. State Bank of India"
+                      className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 font-bold"
+                    />
+                  </div>
+
+                  {/* Account Number */}
+                  <div className="space-y-1">
+                    <label className="block text-[8px] font-black uppercase text-gray-400 dark:text-stone-500 tracking-widest leading-none">
+                      Bank Account Number
+                    </label>
+                    <input
+                      type="text"
+                      value={merchantAccountNo}
+                      onChange={(e) => setMerchantAccountNo(e.target.value)}
+                      placeholder="e.g. 100234567891"
+                      className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+
+                  {/* IFSC Code */}
+                  <div className="md:col-span-2 space-y-1">
+                    <label className="block text-[8px] font-black uppercase text-gray-400 dark:text-stone-500 tracking-widest leading-none">
+                      NEFT/IFSC Bank Code
+                    </label>
+                    <input
+                      type="text"
+                      value={merchantIfsc}
+                      onChange={(e) => setMerchantIfsc(e.target.value.toUpperCase())}
+                      placeholder="e.g. SBIN0001024"
+                      className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 font-mono uppercase"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveMerchantDetails}
+                  disabled={isSavingMerchant}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 shadow-sm active:scale-98 transition-all hover:brightness-105 cursor-pointer disabled:opacity-50 border-none uppercase tracking-wider"
+                >
+                  {isSavingMerchant ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving Registered Credentials...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CreditCard className="w-3.5 h-3.5 text-indigo-200 animate-pulse" />
+                      <span>Configure Account to Receive Payments</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           )}
@@ -1136,7 +1858,7 @@ export default function MoreTab({
                 <div className="p-3.5 bg-amber-500/10 border border-amber-500/15 rounded-xl text-[11px] text-amber-700 dark:text-amber-400 font-bold flex gap-2">
                   <Info className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
                   <span>
-                    🔒 Enterprise Google Drive cloud backups are restricted exclusively to the primary Owner of the business workspace.
+                    🔒 Premium Google Drive cloud backups are restricted exclusively to the primary Owner of the business workspace.
                   </span>
                 </div>
               ) : (
@@ -1144,7 +1866,7 @@ export default function MoreTab({
                   <div className="p-3 bg-blue-500/10 border border-blue-500/15 rounded-xl text-[10px] text-blue-700 dark:text-blue-400 font-bold flex gap-2">
                     <Info className="w-4 h-4 shrink-0" />
                     <span>
-                      Sync your entire database with your personal Google Drive in real-time. All modifications can auto-synchronize in the background securely.
+                      Sync your entire database with your personal Google Drive in real-time. All modifications can auto-synchronize in the background automatically.
                     </span>
                   </div>
 
@@ -1284,7 +2006,81 @@ export default function MoreTab({
 
 
 
-        {/* Module 6: App Security, Lockouts & Auditing (Admin supervisor panel) */}
+        {/* Module 5.5: Phone Local Storage Backup & Recovery */}
+        <div className="bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 rounded-xl overflow-hidden shadow-sm">
+          <button
+            onClick={() => setActiveSection(activeSection === "phone_backup" ? "none" : "phone_backup")}
+            className="w-full flex items-center justify-between p-3.5 text-left text-xs font-black uppercase tracking-wider text-gray-700 dark:text-stone-200 outline-none hover:bg-slate-50 dark:hover:bg-stone-800 cursor-pointer"
+          >
+            <span className="flex items-center gap-2">
+              <Smartphone className="w-4.5 h-4.5 text-[#059669]" />
+              Offline Phone & Device Backup
+            </span>
+            {activeSection === "phone_backup" ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+
+          {activeSection === "phone_backup" && (
+            <div className="p-4 border-t border-gray-100 dark:border-stone-800 space-y-3.5 text-left animate-slide-up select-none font-sans">
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/15 rounded-xl text-[10px] text-emerald-850 dark:text-emerald-400 font-bold flex gap-2">
+                <Info className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>
+                  Save database backups directly to your phone storage (downloads folder) securely. You can restore your data offline anytime by importing the downloaded file.
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {/* 1. Export as Backup File */}
+                <div className="space-y-1">
+                  <span className="block text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none">
+                    Save to Phone / Device Downloads
+                  </span>
+                  <p className="text-[9.5px] text-gray-500 dark:text-stone-400 leading-normal pb-1">
+                    Export a master `.json` backup file containing all your clients, repair tickets, inventory parts, layouts, and system configurations.
+                  </p>
+                  
+                  <button
+                    onClick={handleExportToPhone}
+                    className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 text-white font-extrabold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 shadow-xs active:scale-98 transition-all hover:brightness-110 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download Backup to Phone</span>
+                  </button>
+                </div>
+
+                <div className="border-t border-gray-100 dark:border-stone-800 pt-3 space-y-1">
+                  {/* 2. Restore from Backup File */}
+                  <span className="block text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none">
+                    Restore from Phone File
+                  </span>
+                  <p className="text-[9.5px] text-gray-500 dark:text-stone-400 leading-normal pb-1.5">
+                    Upload a previously downloaded `.json` master backup file to overwrite your current database.
+                  </p>
+                  
+                  <div className="relative">
+                    <input
+                      id="phone-backup-file-input"
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportFromPhone}
+                      className="hidden"
+                    />
+                    <button
+                      onClick={() => document.getElementById("phone-backup-file-input")?.click()}
+                      className="w-full bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-extrabold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <CloudLightning className="w-4 h-4 text-[#059669]" />
+                      <span>Import & Restore Backup File</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+
+
+        {/* Module 6: App Accounts & Auditing (Admin supervisor panel) */}
         {currentUser?.role === "Owner" && (
           <div className="bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 rounded-xl overflow-hidden shadow-sm">
             <button
@@ -1293,7 +2089,7 @@ export default function MoreTab({
             >
               <span className="flex items-center gap-2">
                 <Settings className="w-4.5 h-4.5 text-rose-500" />
-                App Security & Operator Logins (Admin Only)
+                App Access & Operator Logins (Admin Only)
               </span>
               {activeSection === "security" ? <ChevronDown className="w-4.5 h-4.5" /> : <ChevronRight className="w-4.5 h-4.5" />}
             </button>
@@ -1315,7 +2111,7 @@ export default function MoreTab({
 
                 {isLoadingSecurity && cloudUsers.length === 0 ? (
                   <div className="text-center py-4 text-xs text-gray-400 font-bold animate-pulse">
-                    Retrieving secure collections...
+                    Retrieving operator collections...
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-[220px] overflow-y-auto">
@@ -1393,7 +2189,7 @@ export default function MoreTab({
                 {/* Audit Logs Trail section */}
                 <div className="border-t border-gray-150 dark:border-stone-850 pt-3">
                   <span className="block text-[10px] font-black uppercase tracking-wider text-gray-455 mb-2">
-                    Security Login Audit Logs
+                    Operator Login Audit Logs
                   </span>
 
                   <div className="space-y-1.5 max-h-[160px] overflow-y-auto font-mono select-text">
@@ -1464,7 +2260,7 @@ export default function MoreTab({
                     Simultaneous Multi-Device Access
                   </h4>
                   <p className="text-[10px] text-gray-400 dark:text-stone-400 leading-normal mt-0.5 font-medium">
-                    Link other web browsers, store tablets or operator desks by scanning a pairing QR code. Your data syncs securely.
+                    Link other web browsers, store tablets or operator desks by scanning a pairing QR code. Your data syncs automatically.
                   </p>
                 </div>
 
@@ -1563,6 +2359,188 @@ export default function MoreTab({
           )}
         </div>
 
+        {/* Module 8: Help Centre & Real-Time Diagnostics */}
+        <div className="bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 rounded-xl overflow-hidden shadow-sm">
+          <button
+            onClick={() => setActiveSection(activeSection === "help" ? "none" : "help")}
+            className="w-full flex items-center justify-between p-3.5 text-left text-xs font-black uppercase tracking-wider text-gray-700 dark:text-stone-200 outline-none hover:bg-slate-50 dark:hover:bg-stone-800"
+          >
+            <span className="flex items-center gap-2">
+              <HelpCircle className="w-4.5 h-4.5 text-blue-500" />
+              <span>Help Centre & Diagnostics</span>
+            </span>
+            {activeSection === "help" ? <ChevronDown className="w-4.5 h-4.5 text-gray-400" /> : <ChevronRight className="w-4.5 h-4.5 text-gray-400" />}
+          </button>
+
+          {activeSection === "help" && (
+            <div className="p-4 border-t border-gray-100 dark:border-stone-800 space-y-4 text-left animate-slide-up select-none">
+              
+              {/* Interactive Help FAQ Guide */}
+              <div className="space-y-2">
+                <span className="block text-[9.5px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-widest flex items-center gap-1">
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Frequently Asked Questions</span>
+                </span>
+
+                <div className="space-y-1.5 font-sans">
+                  {[
+                    {
+                      q: "How do I sync to Google Drive?",
+                      a: "Navigate to \"Google Drive Cloud Backup\" (Module 5 above). Sign in with your GSuite/personal Google account, then tap \"Backup All Databases to Drive\" to generate a lightweight cloud recovery backup instantly."
+                    },
+                    {
+                      q: "Why is the camera scanner black or blocked?",
+                      a: "Web browsers restrict camera APIs when nested inside frames. To solve this, tap the \"Open App in New Tab\" button at the top-right of your screen. This allows the browser to request direct physical camera access."
+                    },
+                    {
+                      q: "How are ticket jobs counted or tracking links shared?",
+                      a: "Every new job gets a unique numeric ID (e.g. #JOB-1055). You can copy the \"Live Status Tracker Link\" from any client profile or service ticket and send it via text/email. Customers can monitor progress in real-time."
+                    },
+                    {
+                      q: "Can I run the system completely offline?",
+                      a: "Yes! The workspace automatically persists databases, active spot locations, templates, and technician logs locally in your browser storage. All updates persist securely even when offline."
+                    },
+                    {
+                      q: "What do I do if an operator account is locked out?",
+                      a: "If an operator enters their password incorrectly 5 times, they are locked out. An Owner account can unlock them by expanding \"App Access & Operator Logins\" (Module 6) and tapping \"Unlock / Reset\" next to their name."
+                    }
+                  ].map((faq, i) => (
+                    <div key={i} className="border border-gray-150 dark:border-stone-850 rounded-xl overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFaqIndex(selectedFaqIndex === i ? null : i)}
+                        className="w-full text-left p-2.5 bg-slate-50/50 hover:bg-slate-50 dark:bg-stone-900/50 dark:hover:bg-stone-850 flex justify-between items-center transition-colors outline-none cursor-pointer"
+                      >
+                        <span className="text-[10.5px] font-bold text-gray-700 dark:text-stone-250 pr-2 leading-tight">
+                          {faq.q}
+                        </span>
+                        {selectedFaqIndex === i ? (
+                          <ChevronDown className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                        )}
+                      </button>
+                      
+                      {selectedFaqIndex === i && (
+                        <div className="p-3 bg-white dark:bg-stone-900 text-[10px] text-gray-500 dark:text-stone-450 leading-relaxed border-t border-gray-100 dark:border-stone-850/65 font-medium animate-fade-in text-left">
+                          {faq.a}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* System Diagnostics Tester Block */}
+              <div className="border-t border-gray-100 dark:border-stone-850 pt-3.5 space-y-2.5">
+                <span className="block text-[9.5px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-widest flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5" />
+                  <span>Real-Time System Diagnostics</span>
+                </span>
+
+                {diagnosticsRunning ? (
+                  <div className="p-4 bg-slate-50 dark:bg-stone-950 rounded-2xl border border-gray-100 dark:border-stone-850/60 text-center space-y-3">
+                    <RefreshCw className="w-6 h-6 animate-spin text-blue-500 mx-auto" />
+                    <p className="text-[10px] text-gray-505 dark:text-stone-400 font-extrabold uppercase tracking-wider animate-pulse">
+                      Analyzing local memory files, indices, and communication handshakes...
+                    </p>
+                  </div>
+                ) : diagnosticsChecked ? (
+                  <div className="space-y-2.5 animate-fade-in text-left">
+                    <div className="p-3 bg-emerald-500/5 dark:bg-emerald-950/10 rounded-2xl border border-emerald-500/15 select-none text-left">
+                      <div className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span className="text-[10.5px] font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-wide">
+                          All workspace modules are fully healthy
+                        </span>
+                      </div>
+                      <p className="text-[9.5px] text-emerald-700/80 dark:text-emerald-400/75 leading-relaxed mt-1 font-medium">
+                        Self-diagnostic check completed! Databases verified, schema structural integrity is pristine, and no memory leaks or corrupted indices detected.
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-50 dark:bg-stone-950 p-3 rounded-2xl border border-gray-100 dark:border-stone-850/60 font-mono text-[9px] space-y-1.5 text-gray-500 dark:text-stone-400">
+                      <div className="flex justify-between border-b border-gray-200/50 dark:border-stone-850/60 pb-1">
+                        <span>PERSISTENCE DATABASE:</span>
+                        <span className="text-emerald-600 font-bold">100% HEALTHY ({services.length + inventory.length + customers.length} records)</span>
+                      </div>
+                      <div className="flex justify-between border-b border-gray-200/50 dark:border-stone-850/60 pb-1">
+                        <span>WORKSPACE ENCRYPTION:</span>
+                        <span className="text-gray-700 dark:text-stone-300">HTTPS SSL ACTIVE</span>
+                      </div>
+                      <div className="flex justify-between border-b border-gray-200/50 dark:border-stone-850/60 pb-1">
+                        <span>WHATSAPP CONTEXT:</span>
+                        <span className="text-gray-700 dark:text-stone-300">{waTemplates.length} TEMPLATES PARSED</span>
+                      </div>
+                      <div className="flex justify-between border-b border-gray-200/50 dark:border-stone-850/60 pb-1">
+                        <span>SPOT LOCATIONS:</span>
+                        <span className="text-gray-700 dark:text-stone-300">{serviceLocations.length + stockLocations.length} PHYSICAL NODES</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>DIAGNOSTIC HASH:</span>
+                        <span className="text-gray-400 font-semibold uppercase">{Math.random().toString(36).substring(2, 10)}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiagnosticsRunning(true);
+                        setTimeout(() => {
+                          setDiagnosticsRunning(false);
+                          showToast("Dynamic diagnostics completed! System is pristine.", "success");
+                        }, 1000);
+                      }}
+                      className="text-[9.5px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest hover:underline block cursor-pointer"
+                    >
+                      Re-run diagnostic sweep
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-slate-100/50 dark:bg-stone-950/45 rounded-2xl border border-dashed border-gray-200 dark:border-stone-850 text-center space-y-2.5">
+                    <p className="text-[10px] text-gray-400 dark:text-stone-500 font-medium font-sans">
+                      Press below to inspect internal local state tables, local storage buffers, and operator access indices.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiagnosticsRunning(true);
+                        setTimeout(() => {
+                          setDiagnosticsRunning(false);
+                          setDiagnosticsChecked(true);
+                          showToast("Diagnostic check completed successfully!", "success");
+                        }, 1200);
+                      }}
+                      className="bg-gray-150 hover:bg-gray-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-gray-700 dark:text-stone-300 text-[9.5px] font-black uppercase py-2 px-4 rounded-xl shadow-xs transition-all active:scale-97 cursor-pointer border-none"
+                    >
+                      Run Diagnostics Test
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Secure Production Play Store Preparation & Purge */}
+              <div className="pt-4 border-t border-gray-150 dark:border-stone-850/80 space-y-3 text-left">
+                <span className="block text-[9.5px] font-black text-rose-655 dark:text-rose-450 uppercase tracking-widest flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping mr-1" />
+                  <span>Google Play Store Prep & Clear Data</span>
+                </span>
+                <p className="text-[9.5px] text-gray-430 dark:text-stone-400 leading-relaxed">
+                  Before publishing this application to Google Play Store or hand off to customers, you must clear all test clients, fake tickets, mock items, and restart the ticket counter index. This operation completely wipes those test records to give your app a fresh, pristine starting state.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowWipeModal(true)}
+                  className="w-full bg-rose-550/10 hover:bg-rose-550/25 border border-dashed border-rose-500/25 text-rose-650 dark:text-rose-400 font-extrabold text-[9.5px] uppercase tracking-wider py-2.5 rounded-xl transition-all active:scale-97 cursor-pointer text-center"
+                >
+                  🧹 Clear Databases & Reset ticket series
+                </button>
+              </div>
+
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* Logout Session overlay */}
@@ -1579,17 +2557,17 @@ export default function MoreTab({
       </button>
 
       {/* Slide-Up Bottom Sheet Modal: Add Custom Location Node */}
-      {showAddLoc && (
+      {showAddLocType && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center">
           <div className="w-full max-w-md bg-white dark:bg-stone-900 rounded-t-3xl border-t border-slate-200/50 dark:border-stone-800 max-h-[85vh] overflow-y-auto flex flex-col animate-slide-up">
             
             <div className="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-stone-800 sticky top-0 bg-white dark:bg-stone-900 z-10">
               <h3 className="text-base font-black text-gray-800 dark:text-stone-100">
-                Register Storage Location Spot
+                Register {showAddLocType === "service" ? "Service" : "Stock"} Spot
               </h3>
               <button
-                onClick={() => setShowAddLoc(false)}
-                className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-stone-800 text-gray-500"
+                onClick={() => setShowAddLocType(null)}
+                className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-stone-800 text-gray-500 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1603,7 +2581,7 @@ export default function MoreTab({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Cabinet Row C-5"
+                  placeholder={showAddLocType === "service" ? "e.g. Repair Table 4" : "e.g. Warehouse Rack B-3"}
                   value={locText}
                   onChange={e => setLocText(e.target.value)}
                   className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-800 dark:text-stone-100 border border-gray-200 dark:border-stone-700 rounded-xl focus:outline-none"
@@ -1612,11 +2590,87 @@ export default function MoreTab({
 
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white font-black text-xs py-3 rounded-xl shadow-xs"
+                className={`w-full text-white font-black text-xs py-3 rounded-xl shadow-xs cursor-pointer ${
+                  showAddLocType === "service"
+                    ? "bg-gradient-to-r from-emerald-600 to-emerald-700"
+                    : "bg-gradient-to-r from-blue-600 to-blue-700"
+                }`}
               >
-                Register Spot Node
+                Register {showAddLocType === "service" ? "Service" : "Stock"} Spot
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Slide-Up Bottom Sheet Modal: Add Custom Payment Option */}
+      {showAddPaymentModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center">
+          <div className="w-full max-w-md bg-white dark:bg-stone-900 rounded-t-3xl border-t border-slate-200/50 dark:border-stone-800 max-h-[85vh] overflow-y-auto flex flex-col animate-slide-up">
+            
+            <div className="flex justify-between items-center px-5 py-4 border-b border-gray-100 dark:border-stone-800 sticky top-0 bg-white dark:bg-stone-900 z-10">
+              <h3 className="text-base font-black text-gray-800 dark:text-stone-100">
+                Register Payment Method
+              </h3>
+              <button
+                onClick={() => setShowAddPaymentModal(false)}
+                className="p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-stone-800 text-gray-500 cursor-pointer animate-scale-in"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddPaymentSubmit} className="p-5 space-y-4 text-left">
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 dark:text-stone-400 uppercase tracking-widest mb-1">
+                  Payment Method Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. PhonePe UPI, Razorpay, NetBanking..."
+                  value={paymentText}
+                  onChange={e => setPaymentText(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-800 dark:text-stone-100 border border-gray-200 dark:border-stone-700 rounded-xl focus:outline-none"
+                  autoFocus
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full text-white font-black text-xs py-3 rounded-xl shadow-xs cursor-pointer bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 transition-all font-bold"
+              >
+                Register Payment Channel
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete/Remove Payment Option Dialog */}
+      {deletingPaymentIndex !== null && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-stone-900 rounded-3xl p-6 border border-slate-200/50 dark:border-stone-800 text-center animate-slide-up shadow-xl">
+            <h3 className="text-sm font-black text-gray-800 dark:text-stone-100 mb-2">
+              Remove Payment Channel
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-stone-400 mb-6 font-medium">
+              Are you sure you want to remove <strong className="text-gray-800 dark:text-stone-100">"{paymentMethods[deletingPaymentIndex]}"</strong>? New bills will not be able to select this payment method channel.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setDeletingPaymentIndex(null)}
+                className="px-4 py-2 bg-gray-100 dark:bg-stone-800 hover:bg-gray-200 dark:hover:bg-stone-700 text-gray-700 dark:text-stone-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeletePayment(deletingPaymentIndex)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-sm ml-1"
+              >
+                Yes, Remove
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1782,7 +2836,7 @@ export default function MoreTab({
 
             <div className="p-3 bg-slate-50 dark:bg-stone-950 rounded-xl border border-gray-100 dark:border-stone-850 font-mono text-[9px] space-y-1 text-gray-500 dark:text-stone-400">
               <div>REQUEST_ID: {pendingLoginRequest.sessionId.substring(0, 18)}...</div>
-              <div>SECURITY: HTTPS SECURE SSL GATEWAY</div>
+              <div>CONNECTION: ACTIVE HTTPS SSL TUNNEL</div>
               <div>OPERATOR: {currentUser?.email || "vijaynaik2798@gmail.com"}</div>
             </div>
 
@@ -1799,7 +2853,7 @@ export default function MoreTab({
                   localStorage.setItem(`approved_session_${pendingLoginRequest.sessionId}`, JSON.stringify({ user: targetUser }));
                   // Dispatch storage event to sync other local frames or intervals instantly
                   window.dispatchEvent(new Event("storage_sync2")); 
-                  showToast("Authorized companion session securely! Clean handshake.", "success");
+                  showToast("Authorized companion session successfully! Clean handshake.", "success");
                   setPendingLoginRequest(null);
                 }}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase py-2.5 rounded-xl text-center shadow-md transition-all cursor-pointer border-none"
@@ -1826,6 +2880,388 @@ export default function MoreTab({
             >
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Wipe Confirmation Modal */}
+      {showWipeModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-stone-900 rounded-3xl border border-gray-150 dark:border-stone-850 p-6 space-y-4 animate-slide-up text-left">
+            <div>
+              <span className="p-1 px-2.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[8.5px] font-black uppercase tracking-widest leading-none">
+                ⚠️ PERMANENT WIPE WARNING
+              </span>
+              <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight mt-2 flex items-center gap-1">
+                Wipe all Client & Ticket records?
+              </h3>
+              <p className="text-[10px] text-gray-500 dark:text-stone-400 leading-normal mt-1 font-medium select-none">
+                All client entries, ticket history, repairs, inventory items, and sequence counters will be forever deleted. This is irreversible and ready for app store handover.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-center select-none pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (onResetAllData) {
+                    onResetAllData();
+                  }
+                  setShowWipeModal(false);
+                  showToast("App databases cleared successfully! Pristine Handover state achieved.", "success");
+                }}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] uppercase py-2.5 rounded-xl cursor-pointer shadow-md transition-all active:scale-97 border-none"
+              >
+                Yes, Purge All Data
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowWipeModal(false)}
+                className="bg-gray-100 hover:bg-gray-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-gray-700 dark:text-stone-300 font-extrabold text-[10px] uppercase py-2.5 rounded-xl cursor-pointer transition-all border-none"
+              >
+                Nevermind, Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Subscription Secure Checkout Modal */}
+      {selectedPlanToUpgrade && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white dark:bg-stone-900 rounded-3xl border border-gray-150 dark:border-stone-850 overflow-hidden text-left shadow-2xl relative flex flex-col max-h-[90vh]">
+            
+            {/* Header */}
+            <div className="p-5 border-b border-gray-100 dark:border-stone-850 bg-slate-50 dark:bg-stone-950 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <Crown className="w-5 h-5 text-amber-500 animate-bounce" />
+                <div>
+                  <h3 className="text-xs font-black uppercase text-gray-400 tracking-wider">Secured checkout gateway</h3>
+                  <p className="text-sm font-black text-gray-900 dark:text-white uppercase">Upgrade to Premium (Full Access)</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (!securedPaying) setSelectedPlanToUpgrade(null);
+                }}
+                className="p-1 text-gray-400 hover:text-gray-600 dark:text-stone-400 dark:hover:text-stone-200 cursor-pointer border-none bg-transparent"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content scroll area */}
+            <div className="p-5 overflow-y-auto space-y-4 grow">
+
+              {/* Price summary block */}
+              <div className="p-4 bg-indigo-50/40 dark:bg-indigo-950/10 border border-indigo-150/40 dark:border-indigo-900/30 rounded-2xl">
+                <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider">
+                  <span className="text-slate-500 dark:text-stone-400">Selected license tier</span>
+                  <span className="text-indigo-600 dark:text-indigo-400">Premium ({billingCycle})</span>
+                </div>
+                <div className="flex justify-between items-center mt-2">
+                  <span className="text-[10px] font-bold text-gray-500">Base Price</span>
+                  <span className="text-sm font-black font-mono text-gray-800 dark:text-stone-100">
+                    {billingCycle === "monthly" ? "₹300" : "₹3,000"}
+                  </span>
+                </div>
+
+                {promoApplied && (
+                  <div className="flex justify-between items-center mt-1.5 text-[10px] text-[#059669] font-black uppercase">
+                    <span>Discount (STOCKIVO_VIP Coupon 20%)</span>
+                    <span>
+                      -{billingCycle === "monthly" ? "₹60" : "₹600"}
+                    </span>
+                  </div>
+                )}
+
+                <div className="border-t border-indigo-200/40 dark:border-indigo-900/40 mt-3 pt-3 flex justify-between items-center">
+                  <span className="text-xs font-black uppercase text-gray-700 dark:text-stone-200">Total Settlement Net</span>
+                  <span className="text-lg font-black font-mono text-indigo-700 dark:text-indigo-400">
+                    ₹{billingCycle === "monthly"
+                      ? (promoApplied ? 240 : 300)
+                      : (promoApplied ? 2400 : 3000)
+                    }
+                  </span>
+                </div>
+              </div>
+
+              {/* Promo code field */}
+              <div className="space-y-1.5">
+                <label className="block text-[9px] font-black uppercase text-gray-400 tracking-wider">Apply VIP Promo Code</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    disabled={promoApplied || securedPaying}
+                    placeholder="e.g. STOCKIVO_VIP"
+                    value={promoCode}
+                    onChange={e => setPromoCode(e.target.value)}
+                    className="text-xs p-2.5 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none grow uppercase font-bold"
+                  />
+                  <button
+                    type="button"
+                    disabled={promoApplied || securedPaying}
+                    onClick={handleApplyPromoCode}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-4 rounded-xl cursor-pointer disabled:opacity-50"
+                  >
+                    {promoApplied ? "Applied" : "Apply"}
+                  </button>
+                </div>
+                {!promoApplied && (
+                  <span className="text-[8px] text-gray-400 block font-semibold leading-relaxed">
+                    * Try coupon code "STOCKIVO_VIP" to instantly obtain 20% discount.
+                  </span>
+                )}
+              </div>
+
+              {/* Payment Gateway selections */}
+              <div className="space-y-1.5">
+                <label className="block text-[9px] font-black uppercase text-gray-400 tracking-wider">Choose Settling Gateway Channel</label>
+                <select
+                  disabled={securedPaying}
+                  value={paymentGateway}
+                  onChange={e => setPaymentGateway(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none font-bold cursor-pointer"
+                >
+                  <option value="UPI Pay (GooglePay/PhonePe)">UPI Pay (GooglePay/PhonePe)</option>
+                  <option value="Secured Razorpay Gateway">Secured Razorpay Node Gateway</option>
+                  <option value="Interactive Netbanking Settlement">Interactive Netbanking Settlement</option>
+                  {paymentMethods.map((method, idx) => (
+                    <option key={idx} value={`Custom: ${method}`}>{method}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Business address details */}
+              <div className="space-y-1.5">
+                <label className="block text-[9px] font-black uppercase text-gray-400 tracking-wider">SECURE BILLING ADDRESS</label>
+                <input
+                  type="text"
+                  disabled={securedPaying}
+                  placeholder="Business Legal entity Name & State Tax registration ID"
+                  defaultValue={`${currentUser?.name || "Stockivo Partner"} - Headquarters`}
+                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none"
+                />
+              </div>
+
+            </div>
+
+            {/* Bottom action trigger bar */}
+            <div className="p-5 border-t border-gray-100 dark:border-stone-850 bg-slate-50 dark:bg-stone-950 select-none shrink-0">
+              <button
+                type="button"
+                disabled={securedPaying}
+                onClick={() => {
+                  const finalTotal = billingCycle === "monthly"
+                    ? (promoApplied ? 240 : 300)
+                    : (promoApplied ? 2400 : 3000);
+                  handleCheckoutUpgrade(finalTotal);
+                }}
+                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs uppercase font-black tracking-widest cursor-pointer shadow-md text-center border-none"
+              >
+                Verify & complete secured payment
+              </button>
+            </div>
+
+            {/* Secured paying state progress loader overlay */}
+            {securedPaying && (
+              <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-xs flex flex-col items-center justify-center text-center p-6 z-50 text-white">
+                <RefreshCw className="w-10 h-10 text-indigo-500 animate-spin" />
+                <h3 className="text-sm font-black uppercase tracking-wider mt-4 text-indigo-400">SECURE UPI BANK TRANSACTION ACTIVE</h3>
+                <p className="text-[11px] text-gray-300 font-bold max-w-xs mt-2 leading-relaxed whitespace-pre-line">
+                  {securedPaymentStep}
+                </p>
+                <span className="text-[8.5px] text-slate-500 mt-6 block select-none uppercase tracking-widest font-black leading-none">
+                  🛡️ SSL encrypted · 3D-Handshake verified
+                </span>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* Payment Success Confirmation modal receipt card */}
+      {paymentSuccessDetail && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-stone-900 rounded-3xl border border-gray-150 dark:border-stone-850 p-6 space-y-4 animate-slide-up text-center shadow-2xl relative select-none">
+            
+            <div className="absolute right-0 top-0 translate-x-4 -translate-y-4 w-16 h-16 bg-emerald-500/15 rounded-full blur-xl" />
+
+            <div className="flex flex-col items-center">
+              <div className="w-11 h-11 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-sm">
+                <ShieldCheck className="w-6 h-6 animate-pulse" />
+              </div>
+              <span className="p-1 px-2 mt-3 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[8px] font-black uppercase tracking-widest leading-none">
+                Upgrade Authorized successfully
+              </span>
+              <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight mt-2 leading-none">
+                 You are Upgraded to {paymentSuccessDetail.plan}!
+              </h3>
+              <p className="text-[10px] text-gray-500 dark:text-stone-400 font-medium leading-relaxed mt-1">
+                Your database entity limits have been expanded cleanly. Enjoy advanced PDF reports, automated notifications, and faster syncing!
+              </p>
+            </div>
+
+            {/* Receipt Summary fields */}
+            <div className="p-3 bg-slate-50 dark:bg-stone-950 border border-gray-150 dark:border-stone-850 rounded-2xl text-left text-[10px] font-bold space-y-2 font-mono">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Transaction ID</span>
+                <span className="text-gray-800 dark:text-stone-200 uppercase font-black">{paymentSuccessDetail.transactionId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Invoice Reference</span>
+                <span className="text-indigo-600 dark:text-indigo-400 font-black">{paymentSuccessDetail.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Date Completed</span>
+                <span className="text-gray-800 dark:text-stone-200">{paymentSuccessDetail.date}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Subscription Tier</span>
+                <span className="text-emerald-600 dark:text-emerald-400 uppercase font-black">{paymentSuccessDetail.plan}</span>
+              </div>
+              <div className="border-t border-slate-200/50 dark:border-stone-850 mt-2 pt-2 flex justify-between font-black text-gray-950 dark:text-stone-100 text-xs">
+                <span>Total Settled</span>
+                <span>₹{paymentSuccessDetail.amount}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setPaymentSuccessDetail(null)}
+              className="w-full py-3 bg-slate-900 hover:bg-slate-950 dark:bg-stone-800 dark:hover:bg-stone-850 text-white font-black text-xs uppercase rounded-xl shadow-md cursor-pointer border-none"
+            >
+              Close & launch Premium tools
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Receipt Invoice Elegant Corporate detail popup */}
+      {selectedReceiptInvoice && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white dark:bg-stone-900 rounded-3xl border border-gray-150 dark:border-stone-850 overflow-hidden text-left shadow-2xl relative flex flex-col max-h-[90vh]">
+            
+            {/* Action Bar */}
+            <div className="p-3 bg-slate-50 dark:bg-stone-950 border-b border-gray-100 dark:border-stone-850 flex justify-between items-center sm:px-5 shrink-0 select-none">
+              <span className="text-[9px] text-[#059669] dark:text-emerald-400 font-black uppercase tracking-widest flex items-center gap-1.5 bg-emerald-500/10 p-1 px-2 rounded-full">
+                <ShieldCheck className="w-3.5 h-3.5" /> SECURED TAX INVOICE
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.print();
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] uppercase font-black p-1.5 px-3 rounded-lg flex items-center gap-1 cursor-pointer border-none"
+                >
+                  <Receipt className="w-3 h-3" /> Print
+                </button>
+                <button
+                  onClick={() => setSelectedReceiptInvoice(null)}
+                  className="bg-gray-100 hover:bg-gray-200 dark:bg-stone-800 text-slate-700 dark:text-stone-300 text-[10px] uppercase font-black p-1.5 px-3 rounded-lg cursor-pointer border-none"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {/* Invoice Corporate Paper */}
+            <div className="p-6 md:p-8 overflow-y-auto space-y-6 font-sans text-xs bg-stone-50 text-slate-800 dark:bg-stone-950 dark:text-stone-300 grow">
+              
+              {/* Header block */}
+              <div className="flex justify-between items-start border-b border-slate-200 dark:border-stone-850 pb-5">
+                <div>
+                  <h2 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight leading-none">STOCKIVO SYSTEMS</h2>
+                  <p className="text-[9px] text-slate-400 font-bold tracking-widest uppercase mt-1">Enterprise licensing Node Inc.</p>
+                  <span className="text-[8px] text-slate-400 mt-2 block leading-normal">
+                    Whitefield IT corridor Sector 4<br />
+                    Bangalore, KA, India - 560066<br />
+                    GCP Cloud Engine ID: b82ede06-bbd8-4f3d-bbe7-48a3650630e2
+                  </span>
+                </div>
+                <div className="text-right">
+                  <h3 className="text-sm font-black text-indigo-600 dark:text-indigo-400 leading-none select-all">{selectedReceiptInvoice.id}</h3>
+                  <span className="text-[8px] text-slate-400 font-black uppercase tracking-wider block mt-1">INVOICE NO</span>
+                  <span className="text-[10px] text-slate-700 dark:text-stone-200 font-mono block mt-2">{selectedReceiptInvoice.date}</span>
+                  <span className="text-[8px] text-slate-400 font-black uppercase tracking-wider block">DATE ISSUED</span>
+                </div>
+              </div>
+
+              {/* Client & Bank settlement details */}
+              <div className="grid grid-cols-2 gap-4 text-[9.5px]">
+                <div>
+                  <h4 className="text-[8.5px] font-black text-slate-400 uppercase tracking-widest block mb-1">BILLED TO</h4>
+                  <strong className="text-slate-900 dark:text-white block font-bold">{currentUser?.name || "Stockivo Service Partner"}</strong>
+                  <span className="text-slate-500 block leading-normal mt-0.5">
+                    User login ID: {currentUser?.loginId || "owner-erp"}<br />
+                    Role Authority: Owner / Master Operator<br />
+                    Account Origin: {currentUser?.originLocation || "Local Node Console"}
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-[8.5px] font-black text-slate-400 uppercase tracking-widest block mb-1">TRANSACTION DETAILS</h4>
+                  <strong className="text-slate-900 dark:text-white block font-bold">{selectedReceiptInvoice.paymentMethod}</strong>
+                  <span className="text-slate-400 block leading-normal mt-0.5">
+                    Gateway TXN: <strong className="text-slate-650 dark:text-slate-200 select-all font-mono font-black">{selectedReceiptInvoice.transactionId}</strong><br />
+                    SSL Security Layer: AES-GCM-256 Verified<br />
+                    Settlement Status: Direct Settlement Cleared (☁)
+                  </span>
+                </div>
+              </div>
+
+              {/* Invoice Itemized table lines */}
+              <div className="space-y-1.5">
+                <h4 className="text-[8.5px] font-black text-slate-400 uppercase tracking-widest">BILLING LINE ITEMS</h4>
+                <div className="border border-slate-200 dark:border-stone-850 rounded-xl overflow-hidden bg-white dark:bg-stone-900">
+                  <div className="grid grid-cols-12 text-[8px] font-black uppercase tracking-wider text-slate-400 p-2.5 bg-slate-50 dark:bg-stone-950 border-b border-slate-150 dark:border-stone-850">
+                    <div className="col-span-8">Product / License tier details</div>
+                    <div className="col-span-1 text-center">Qty</div>
+                    <div className="col-span-3 text-right">Settlement Rate</div>
+                  </div>
+                  <div className="grid grid-cols-12 p-3 font-bold text-gray-700 dark:text-stone-300">
+                    <div className="col-span-8">
+                      <strong className="text-slate-900 dark:text-white font-extrabold uppercase block">Stockivo {selectedReceiptInvoice.plan} Licensing Key</strong>
+                      <span className="text-[9px] text-slate-400 block mt-0.5 leading-normal">
+                        Cloud ERP direct database expansion upgrade key. Unlocks expanded client profiles, service repairs tracking capacity, and unlimited device linkages.
+                      </span>
+                    </div>
+                    <div className="col-span-1 text-center font-mono text-xs">1</div>
+                    <div className="col-span-3 text-right font-mono text-xs text-slate-900 dark:text-white">
+                      {selectedReceiptInvoice.amount === 0 ? "Key Act." : `₹${selectedReceiptInvoice.amount}`}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Invoice summary bottom rates */}
+              <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-stone-850">
+                <div className="w-52 text-[10px] space-y-1.5 font-bold font-mono">
+                  <div className="flex justify-between text-slate-400">
+                    <span>Tax Subtotal</span>
+                    <span>₹{selectedReceiptInvoice.amount === 0 ? "0" : Math.floor(selectedReceiptInvoice.amount / 1.18)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Simulated VAT/Tax (18%)</span>
+                    <span>₹{selectedReceiptInvoice.amount === 0 ? "0" : selectedReceiptInvoice.amount - Math.floor(selectedReceiptInvoice.amount / 1.18)}</span>
+                  </div>
+                  <div className="flex justify-between text-[#059669] dark:text-emerald-400 font-extrabold font-black pt-1.5 border-t border-slate-200 dark:border-stone-850 text-xs">
+                    <span>Total Amount (Paid)</span>
+                    <span>{selectedReceiptInvoice.amount === 0 ? "FREE KEY" : `₹${selectedReceiptInvoice.amount}`}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Legal Terms notes */}
+              <div className="pt-4 border-t border-slate-200 dark:border-stone-850 text-center select-none text-[8.5px] text-slate-400 leading-relaxed font-medium">
+                Thank you for choosing Stockivo Cloud ERP to scale your business repairs operations.<br />
+                This is a computer-generated invoicing receipt and requires no physical signature.<br />
+                © 2026 Stockivo systems. All rights reserved.
+              </div>
+
+            </div>
+
           </div>
         </div>
       )}

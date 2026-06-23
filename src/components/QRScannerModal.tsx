@@ -45,7 +45,7 @@ export default function QRScannerModal({
       return [
         { label: "Pair Chrome - macOS (Corporate HQ)", code: "STOCKIVO-LINK:BROWSER_CHROME_MAC" },
         { label: "Pair Safari - iPad Pro (Chennai Shop Front)", code: "STOCKIVO-LINK:TABLET_SAFARI_FRONT" },
-        { label: "Pair Firefox - Linux (CCTV Monitor Terminal)", code: "STOCKIVO-LINK:MONITOR_FIREFOX_TERM" }
+        { label: "Pair Firefox - Linux (Stock Monitor Terminal)", code: "STOCKIVO-LINK:MONITOR_FIREFOX_TERM" }
       ];
     }
     if (t.includes("customer")) {
@@ -57,10 +57,10 @@ export default function QRScannerModal({
     }
     if (t.includes("model") || t.includes("part")) {
       return [
-        { label: "CP Plus Dome Camera", code: "INVSRV-MODEL:CP-IP-DOME-50" },
-        { label: "Dahua Bullet Camera", code: "INVSRV-MODEL:DAHUA-BULLET-4K" },
+        { label: "CP Plus Main Unit", code: "INVSRV-MODEL:CP-IP-DOME-50" },
+        { label: "CCTV Spares Kit", code: "INVSRV-MODEL:CCTV-BULLET-4K" },
         { label: "TP-Link PoE Switch 8p", code: "INVSRV-MODEL:TP-LINK-POE-8" },
-        { label: "Seagate SkyHawk 2TB HDD", code: "INVSRV-MODEL:SEAGATE-SKYHAWK-2TB" }
+        { label: "Seagate Expansion 2TB HDD", code: "INVSRV-MODEL:SEAGATE-SKYHAWK-2TB" }
       ];
     }
     if (t.includes("location") || t.includes("spot")) {
@@ -267,17 +267,22 @@ export default function QRScannerModal({
           )}
 
           {scanError && (
-            <div className="absolute inset-0 bg-stone-950 flex flex-col items-center justify-center p-5 z-20 overflow-y-auto">
+            <div className="absolute inset-0 bg-stone-950 flex flex-col items-center justify-start p-4 pt-5 z-20 overflow-y-auto no-scrollbar">
               <div className="w-full space-y-3">
-                <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 p-2 rounded-xl">
-                  <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
-                  <span className="text-[9.5px] font-black text-amber-500 uppercase tracking-wide">
-                    Camera access unavailable in preview
-                  </span>
+                <div className="flex flex-col gap-1 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl text-left">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span className="text-[9.5px] font-black text-amber-500 uppercase tracking-wide">
+                      Camera blocked or nested in frame
+                    </span>
+                  </div>
+                  <p className="text-[9px] text-stone-300 font-medium leading-relaxed mt-1">
+                    To use your physical camera, please <strong className="text-amber-400">open the app in a new tab</strong> using the button in the top-right corner. This lets your web browser prompt you directly for browser camera access!
+                  </p>
                 </div>
                 
                 <p className="text-[10px] text-stone-400 leading-normal font-medium text-left">
-                  We've enabled our built-in <strong>Virtual QR Card Simulator</strong>. Tap a code below to instantly trigger scan success:
+                  Or use the built-in <strong className="text-blue-400">Virtual QR Card Simulator</strong>. Tap any item below to trigger a mock scan instantly:
                 </p>
 
                 <div className="grid grid-cols-1 gap-1.5 max-h-[160px] overflow-y-auto pr-1">
