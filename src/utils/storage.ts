@@ -35,10 +35,12 @@ export const DEFAULT_STOCK_LOCATIONS = [
 ];
 
 export const DEFAULT_PAYMENT_METHODS = [
-  "UPI",
-  "Card",
-  "Bank Transfer",
-  "Online"
+  "Cash",
+  "Credit / Debit Card",
+  "Bank Transfer (ACH / SEPA / SWIFT / Wire)",
+  "PayPal / Stripe Link",
+  "UPI / QR Code",
+  "Venmo / Apple Pay / Google Pay"
 ];
 
 // Default technicians/staff

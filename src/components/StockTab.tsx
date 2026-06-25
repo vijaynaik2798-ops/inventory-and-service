@@ -62,6 +62,7 @@ export default function StockTab({
   setTriggeredModal
 }: StockTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeStockSubTab, setActiveStockSubTab] = useState<"inventory" | "history">("inventory");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [isCustomLocInput, setIsCustomLocInput] = useState(false);
 
@@ -757,8 +758,44 @@ export default function StockTab({
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-50 dark:bg-stone-950 transition-colors duration-200 pb-20 select-none">
       
-      {/* 30-Day Item Usage Visual Summary */}
-      <div className="bg-white dark:bg-stone-900 border border-gray-105 dark:border-stone-800/80 p-4 rounded-3xl shadow-xs text-left" id="stock-visual-summary">
+      {/* Sub-Tab Selector for Stock and Transaction Logs */}
+      <div className="flex bg-slate-100/80 dark:bg-stone-900/60 p-1 rounded-2xl gap-1" id="stock-sub-tabs">
+        <button
+          type="button"
+          onClick={() => {
+            setActiveStockSubTab("inventory");
+            setShowHistoryPanel(false);
+          }}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-black tracking-wide transition-all select-none cursor-pointer ${
+            activeStockSubTab === "inventory"
+              ? "bg-white dark:bg-stone-800 text-emerald-600 dark:text-emerald-400 shadow-sm"
+              : "text-gray-500 hover:text-gray-800 dark:hover:text-stone-300"
+          }`}
+        >
+          <Package className="w-3.5 h-3.5" />
+          <span>Active Inventory</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveStockSubTab("history");
+            setShowHistoryPanel(true);
+          }}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-black tracking-wide transition-all select-none cursor-pointer ${
+            activeStockSubTab === "history"
+              ? "bg-white dark:bg-stone-800 text-amber-600 dark:text-amber-400 shadow-sm"
+              : "text-gray-500 hover:text-gray-800 dark:hover:text-stone-300"
+          }`}
+        >
+          <History className="w-3.5 h-3.5" />
+          <span>Stock Transaction Logs</span>
+        </button>
+      </div>
+
+      {activeStockSubTab === "inventory" && (
+        <>
+          {/* 30-Day Item Usage Visual Summary */}
+          <div className="bg-white dark:bg-stone-900 border border-gray-105 dark:border-stone-800/80 p-4 rounded-3xl shadow-xs text-left" id="stock-visual-summary">
         <div className="flex items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-1.5">
             <span className="p-1.5 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400">
@@ -950,15 +987,13 @@ export default function StockTab({
 
           <button
             onClick={() => {
-              setShowHistoryPanel(!showHistoryPanel);
-              if (!showHistoryPanel) {
-                // Scroll to view if opened
-                setShowThresholdConfig(false);
-                setShowAiAuditPanel(false);
-              }
+              setActiveStockSubTab(activeStockSubTab === "history" ? "inventory" : "history");
+              setShowHistoryPanel(activeStockSubTab !== "history");
+              setShowThresholdConfig(false);
+              setShowAiAuditPanel(false);
             }}
             className={`p-2.5 rounded-xl flex items-center gap-1 text-xs cursor-pointer shadow-sm transition-all whitespace-nowrap font-black active:scale-95 shrink-0 ${
-              showHistoryPanel
+              activeStockSubTab === "history"
                 ? "bg-amber-600 hover:bg-amber-750 text-white shadow-[0_0_12px_rgba(217,119,6,0.25)] animate-pulse"
                 : "bg-slate-200 hover:bg-slate-300 dark:bg-stone-800 dark:hover:bg-stone-750 text-gray-800 dark:text-white"
             }`}
@@ -1101,12 +1136,17 @@ export default function StockTab({
 
         </div>
       )}
+        </>
+      )}
 
       {/* Global In/Out Transaction Ledger panel */}
-      {showHistoryPanel && (
-        <div className="bg-white dark:bg-stone-900 border border-amber-500/30 dark:border-stone-850 p-4 rounded-3xl shadow-sm text-left relative overflow-hidden transition-all duration-300 animate-slide-down space-y-4">
+      {(showHistoryPanel || activeStockSubTab === "history") && (
+        <div className="bg-white dark:bg-stone-900 border border-amber-500/30 dark:border-stone-850 p-4 rounded-3xl shadow-sm text-left relative overflow-hidden transition-all duration-300 space-y-4">
           <button
-            onClick={() => setShowHistoryPanel(false)}
+            onClick={() => {
+              setActiveStockSubTab("inventory");
+              setShowHistoryPanel(false);
+            }}
             className="absolute top-4 right-4 text-gray-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer p-1 rounded-full hover:bg-slate-100 dark:hover:bg-stone-800 transition-colors"
           >
             <X className="w-4 h-4" />

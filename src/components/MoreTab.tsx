@@ -225,6 +225,48 @@ export default function MoreTab({
   const [merchantIfsc, setMerchantIfsc] = useState("");
   const [isSavingMerchant, setIsSavingMerchant] = useState(false);
 
+  // Global Currency Configuration for International Users
+  const [currencyConfig, setCurrencyConfig] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("inventory_service_currency_config");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {}
+      }
+    }
+    return { code: "INR", locale: "en-IN" };
+  });
+
+  const AVAILABLE_CURRENCIES = [
+    { label: "US Dollar ($)", code: "USD", locale: "en-US" },
+    { label: "Euro (€)", code: "EUR", locale: "de-DE" },
+    { label: "British Pound (£)", code: "GBP", locale: "en-GB" },
+    { label: "Indian Rupee (₹)", code: "INR", locale: "en-IN" },
+    { label: "Australian Dollar (A$)", code: "AUD", locale: "en-AU" },
+    { label: "Canadian Dollar (C$)", code: "CAD", locale: "en-CA" },
+    { label: "UAE Dirham (د.إ)", code: "AED", locale: "ar-AE" },
+    { label: "Saudi Riyal (ر.س)", code: "SAR", locale: "ar-SA" },
+    { label: "Singapore Dollar (S$)", code: "SGD", locale: "en-SG" },
+    { label: "Japanese Yen (¥)", code: "JPY", locale: "ja-JP" },
+    { label: "South African Rand (R)", code: "ZAR", locale: "en-ZA" },
+    { label: "Swiss Franc (CHF)", code: "CHF", locale: "de-CH" },
+    { label: "Brazilian Real (R$)", code: "BRL", locale: "pt-BR" },
+    { label: "Mexican Peso ($)", code: "MXN", locale: "es-MX" }
+  ];
+
+  const handleUpdateCurrency = (code: string) => {
+    const selected = AVAILABLE_CURRENCIES.find(c => c.code === code);
+    if (selected) {
+      localStorage.setItem("inventory_service_currency_config", JSON.stringify(selected));
+      setCurrencyConfig(selected);
+      showToast(`Global currency updated to ${selected.label}! · Applied 🌎`, "success");
+      setTimeout(() => {
+        window.location.reload();
+      }, 800);
+    }
+  };
+
   useEffect(() => {
     const loadMerchantDetails = async () => {
       try {
@@ -1526,14 +1568,42 @@ export default function MoreTab({
                 </div>
               )}
 
+              {/* --- Global Currency & Local formatting configuration section --- */}
+              <div className="border-t border-gray-150 dark:border-stone-800 pt-4 mt-4 space-y-3">
+                <div className="flex items-center gap-1.5 bg-emerald-50/45 dark:bg-emerald-950/20 p-3 rounded-xl border border-emerald-100/50 dark:border-emerald-900/25">
+                  <span className="text-xl shrink-0 select-none">🌎</span>
+                  <div className="space-y-0.5">
+                    <span className="block text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-400 tracking-wider">
+                      Merchant Currency & Locale Localization
+                    </span>
+                    <span className="block text-[9px] text-gray-450 dark:text-stone-400 leading-normal font-medium">
+                      Select your primary business currency and standard digit layout. This will apply automatically to all services, customer receipts, and stock ledger sheets worldwide.
+                    </span>
+                  </div>
+                </div>
+                <div className="select-none">
+                  <select
+                    value={currencyConfig.code}
+                    onChange={(e) => handleUpdateCurrency(e.target.value)}
+                    className="w-full text-xs font-bold p-3 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    {AVAILABLE_CURRENCIES.map((cur) => (
+                      <option key={cur.code} value={cur.code}>
+                        {cur.label} [{cur.code}]
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               {/* --- Merchant Payout Bank & UPI Setup Form --- */}
               <div className="border-t border-gray-150 dark:border-stone-800 pt-4 mt-4 space-y-3.5">
                 <div>
                   <span className="block text-[9px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-wider mb-1">
-                    🏦 Merchant Account for Payouts
+                    🏦 Worldwide Payout & Merchant Account Details
                   </span>
                   <p className="text-[10px] text-gray-400 dark:text-stone-500 font-medium leading-relaxed">
-                    Register your store's UPI ID and Bank Account details. These credentials will be shown to customers and technicians during service job checkout/invoice processes to receive payment direct credit.
+                    Set up your business payment details. Customers and staff will view these direct credit instructions on tickets, service checkout pages, and printed digital invoices.
                   </p>
                 </div>
 
@@ -1541,27 +1611,27 @@ export default function MoreTab({
                   {/* Business/Merchant Name */}
                   <div className="space-y-1">
                     <label className="block text-[8px] font-black uppercase text-gray-400 dark:text-stone-500 tracking-widest leading-none">
-                      Merchant Name / Beneficiary
+                      Merchant / Beneficiary Name
                     </label>
                     <input
                       type="text"
                       value={merchantName}
                       onChange={(e) => setMerchantName(e.target.value)}
-                      placeholder="e.g. QuickFix Enterprises"
+                      placeholder="e.g. QuickFix Enterprises Ltd"
                       className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 font-bold"
                     />
                   </div>
 
-                  {/* Store UPI ID */}
+                  {/* Store UPI / digital links */}
                   <div className="space-y-1">
                     <label className="block text-[8px] font-black uppercase text-gray-400 dark:text-stone-500 tracking-widest leading-none font-sans">
-                      Store UPI ID (GPay / PhonePe / Paytm / BHIM)
+                      UPI ID / PayPal Link / Stripe Username
                     </label>
                     <input
                       type="text"
                       value={merchantUpi}
                       onChange={(e) => setMerchantUpi(e.target.value)}
-                      placeholder="e.g. storename@okhdfcbank"
+                      placeholder="e.g. pay@quickfix.com or store@okhdfc"
                       className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 font-mono"
                     />
                   </div>
@@ -1569,13 +1639,13 @@ export default function MoreTab({
                   {/* Bank Name */}
                   <div className="space-y-1">
                     <label className="block text-[8px] font-black uppercase text-gray-400 dark:text-stone-500 tracking-widest leading-none">
-                      Settling Bank Name
+                      Financial Bank / Agency Name
                     </label>
                     <input
                       type="text"
                       value={merchantBankName}
                       onChange={(e) => setMerchantBankName(e.target.value)}
-                      placeholder="e.g. State Bank of India"
+                      placeholder="e.g. Chase Bank, Barclays, HSBC"
                       className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 font-bold"
                     />
                   </div>
@@ -1583,21 +1653,21 @@ export default function MoreTab({
                   {/* Account Number */}
                   <div className="space-y-1">
                     <label className="block text-[8px] font-black uppercase text-gray-400 dark:text-stone-500 tracking-widest leading-none">
-                      Bank Account Number
+                      Bank Account / IBAN Number
                     </label>
                     <input
                       type="text"
                       value={merchantAccountNo}
                       onChange={(e) => setMerchantAccountNo(e.target.value)}
-                      placeholder="e.g. 100234567891"
+                      placeholder="e.g. DE8937040044053201"
                       className="w-full text-xs p-2.5 bg-slate-50 dark:bg-stone-850 dark:text-stone-100 border border-gray-200 dark:border-stone-800 rounded-xl focus:outline-none focus:border-indigo-500 font-mono"
                     />
                   </div>
 
-                  {/* IFSC Code */}
+                  {/* IFSC / SWIFT Code */}
                   <div className="md:col-span-2 space-y-1">
-                    <label className="block text-[8px] font-black uppercase text-gray-400 dark:text-stone-500 tracking-widest leading-none">
-                      NEFT/IFSC Bank Code
+                    <label className="block text-[8px] font-black uppercase text-gray-400 dark:text-stone-500 tracking-widest leading-none border-none">
+                      SWIFT-BIC / IFSC / Routing Transit Code
                     </label>
                     <input
                       type="text"

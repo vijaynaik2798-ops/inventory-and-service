@@ -16,7 +16,7 @@ import {
   X,
   FileCheck
 } from "lucide-react";
-import { generateQRUrl, getWhatsAppClickUrl } from "../utils/helpers";
+import { generateQRUrl, getWhatsAppClickUrl, formatCurrency } from "../utils/helpers";
 
 interface CustomersTabProps {
   customers: Customer[];
@@ -275,7 +275,7 @@ export default function CustomersTab({
                       Jobs: <span className="font-bold text-gray-800 dark:text-stone-200">{stats.jobsCount}</span>
                     </div>
                     <div>
-                      Owed: <span className="font-bold text-rose-600 dark:text-rose-400">₹{stats.totalOwed}</span>
+                      Owed: <span className="font-bold text-rose-600 dark:text-rose-400">{formatCurrency(stats.totalOwed)}</span>
                     </div>
                   </div>
                   <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 group-hover:underline">
@@ -442,7 +442,7 @@ export default function CustomersTab({
                         <div className="border-t border-dashed border-gray-200 dark:border-stone-800/80 pt-2 flex justify-between items-center text-[10px] text-gray-500 dark:text-stone-400">
                           <span>Date: {job.date}</span>
                           <span className="font-bold text-gray-700 dark:text-stone-300">
-                            Total: ₹{job.grandTotal}
+                            Total: {formatCurrency(job.grandTotal)}
                           </span>
                         </div>
                       </div>

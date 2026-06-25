@@ -5,14 +5,66 @@
 import { Customer, ServiceJob, ServiceItem, InventoryItem } from "../types";
 
 /**
- * Format currency to Indian Rupees (standard format for INR and local businesses in general)
+ * Format currency dynamically based on global configuration stored in localStorage or fallback to standard INR.
  */
 export const formatCurrency = (amt: number): string => {
-  return new Intl.NumberFormat("en-IN", {
+  let currencyCode = "INR";
+  let currencyLocale = "en-IN";
+
+  try {
+    if (typeof window !== "undefined") {
+      const savedConfig = localStorage.getItem("inventory_service_currency_config");
+      if (savedConfig) {
+        const parsed = JSON.parse(savedConfig);
+        if (parsed && parsed.code && parsed.locale) {
+          currencyCode = parsed.code;
+          currencyLocale = parsed.locale;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed to parse currency config:", err);
+  }
+
+  return new Intl.NumberFormat(currencyLocale, {
     style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0
+    currency: currencyCode,
+    maximumFractionDigits: (currencyCode === "JPY" || currencyCode === "KRW" ? 0 : 2)
   }).format(amt);
+};
+
+/**
+ * Extract active currency symbol dynamically (e.g. $, €, £, ₹, etc.) for text substitution.
+ */
+export const getCurrencySymbol = (): string => {
+  try {
+    let currencyCode = "INR";
+    let currencyLocale = "en-IN";
+
+    if (typeof window !== "undefined") {
+      const savedConfig = localStorage.getItem("inventory_service_currency_config");
+      if (savedConfig) {
+        const parsed = JSON.parse(savedConfig);
+        if (parsed && parsed.code && parsed.locale) {
+          currencyCode = parsed.code;
+          currencyLocale = parsed.locale;
+        }
+      }
+    }
+
+    const formatted = new Intl.NumberFormat(currencyLocale, {
+      style: "currency",
+      currency: currencyCode,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(1);
+
+    // Filter out numbers and spacing/dots to leave only the currency symbol
+    const symbol = formatted.replace(/[10\s.,-]/g, "").trim();
+    return symbol || currencyCode;
+  } catch (e) {
+    return "₹";
+  }
 };
 
 /**
@@ -59,6 +111,7 @@ export const generateQRUrl = (data: string, size = "200x200"): string => {
  * Generate a device detail block for WhatsApp message templates
  */
 export const buildDeviceBlock = (items: ServiceItem[]): string => {
+  const symbol = getCurrencySymbol();
   return items
     .map((item, idx) => {
       const accList = Object.entries(item.accessories)
@@ -85,7 +138,7 @@ export const buildDeviceBlock = (items: ServiceItem[]): string => {
     Prob: ${item.problemDescription || "None"}
     Accs: ${accList || "None"}
     Location: ${item.currentLocation}
-    Fee: ₹${item.total}${extraLines ? `\n${extraLines}` : ""}`;
+    Fee: ${symbol}${item.total}${extraLines ? `\n${extraLines}` : ""}`;
     })
     .join("\n\n");
 };
@@ -112,6 +165,14 @@ export const compileWhatsAppMessage = (
   msg = msg.replaceAll("{{jobNo}}", job.id);
   msg = msg.replaceAll("{{date}}", formatDate(job.date));
   msg = msg.replaceAll("{{deviceBlock}}", deviceBlock);
+  
+  const symbol = getCurrencySymbol();
+  if (symbol !== "₹") {
+    msg = msg.replaceAll("₹{{grandTotal}}", `${symbol}{{grandTotal}}`);
+    msg = msg.replaceAll("Rs. {{grandTotal}}", `${symbol}{{grandTotal}}`);
+    msg = msg.replaceAll("Rs.{{grandTotal}}", `${symbol}{{grandTotal}}`);
+  }
+
   msg = msg.replaceAll("{{grandTotal}}", total.toString());
   msg = msg.replaceAll("{{status}}", uniqueStatuses);
 

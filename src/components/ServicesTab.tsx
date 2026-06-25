@@ -85,8 +85,130 @@ export default function ServicesTab({
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("All");
 
+  // Jobs history sub-tab states
+  const [activeJobsSubTab, setActiveJobsSubTab] = useState<"active" | "history">("active");
+  const [jobsHistorySearch, setJobsHistorySearch] = useState("");
+  const [jobsHistoryFilterType, setJobsHistoryFilterType] = useState<"All" | "status" | "location" | "replacement">("All");
+
   // Selection states
   const [selectedJob, setSelectedJob] = useState<ServiceJob | null>(null);
+
+  // Compile full jobs audit feed
+  const allJobsHistory = useMemo(() => {
+    const events: {
+      type: "status" | "location" | "replacement";
+      jobId: string;
+      itemId: string;
+      customerName: string;
+      brand: string;
+      modelNo: string;
+      title: string;
+      detail: string;
+      operator: string;
+      timestamp: string;
+      rawItem: ServiceItem;
+      rawJob: ServiceJob;
+    }[] = [];
+
+    services.forEach(job => {
+      const cust = customers.find(c => c.id === job.customerId);
+      const cName = cust ? cust.name : "Walk-in Client";
+
+      job.items.forEach(item => {
+        // 1. Status history
+        if (item.statusHistory) {
+          item.statusHistory.forEach(sh => {
+            events.push({
+              type: "status",
+              jobId: job.id,
+              itemId: item.id,
+              customerName: cName,
+              brand: item.brand,
+              modelNo: item.modelNo,
+              title: `Status: ${sh.status}`,
+              detail: `Device transitioned to "${sh.status}".`,
+              operator: sh.changedBy || "Staff",
+              timestamp: sh.timestamp,
+              rawItem: item,
+              rawJob: job
+            });
+          });
+        }
+
+        // 2. Location history
+        if (item.locationHistory) {
+          item.locationHistory.forEach(lh => {
+            events.push({
+              type: "location",
+              jobId: job.id,
+              itemId: item.id,
+              customerName: cName,
+              brand: item.brand,
+              modelNo: item.modelNo,
+              title: `Location: ${lh.location}`,
+              detail: `Moved to physical bay "${lh.location}".`,
+              operator: lh.assignedBy || "Staff",
+              timestamp: lh.timestamp,
+              rawItem: item,
+              rawJob: job
+            });
+          });
+        }
+
+        // 3. Replacements history
+        if (item.replacements) {
+          item.replacements.forEach(rp => {
+            events.push({
+              type: "replacement",
+              jobId: job.id,
+              itemId: item.id,
+              customerName: cName,
+              brand: item.brand,
+              modelNo: item.modelNo,
+              title: `Replaced Part`,
+              detail: `Swapped "${rp.partName}". Reason: ${rp.reason || "Replacement"}.`,
+              operator: item.statusHistory?.[0]?.changedBy || "Technician",
+              timestamp: rp.timestamp,
+              rawItem: item,
+              rawJob: job
+            });
+          });
+        }
+      });
+    });
+
+    // Sort by timestamp descending
+    return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [services]);
+
+  // Filter compiled history
+  const filteredJobsHistory = useMemo(() => {
+    return allJobsHistory.filter(ev => {
+      // 1. Type filter
+      if (jobsHistoryFilterType !== "All" && ev.type !== jobsHistoryFilterType) {
+        return false;
+      }
+
+      // 2. Search search
+      if (jobsHistorySearch.trim()) {
+        const q = jobsHistorySearch.toLowerCase();
+        const matchJobId = ev.jobId.toLowerCase().includes(q);
+        const matchItemId = ev.itemId.toLowerCase().includes(q);
+        const matchCust = ev.customerName.toLowerCase().includes(q);
+        const matchBrand = ev.brand.toLowerCase().includes(q);
+        const matchModel = ev.modelNo.toLowerCase().includes(q);
+        const matchTitle = ev.title.toLowerCase().includes(q);
+        const matchDetail = ev.detail.toLowerCase().includes(q);
+        const matchOp = ev.operator.toLowerCase().includes(q);
+
+        if (!matchJobId && !matchItemId && !matchCust && !matchBrand && !matchModel && !matchTitle && !matchDetail && !matchOp) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [allJobsHistory, jobsHistorySearch, jobsHistoryFilterType]);
   const [selectedItem, setSelectedItem] = useState<ServiceItem | null>(null);
 
   // AI Diagnostic States
@@ -918,8 +1040,38 @@ export default function ServicesTab({
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-50 dark:bg-stone-950 transition-colors duration-200 pb-20 select-none">
       
-      {/* Search and Advanced Filters */}
-      <div className="space-y-2">
+      {/* Sub-Tab Selector for Jobs and History Log */}
+      <div className="flex bg-slate-100/80 dark:bg-stone-900/60 p-1 rounded-2xl gap-1" id="jobs-sub-tabs">
+        <button
+          type="button"
+          onClick={() => setActiveJobsSubTab("active")}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-black tracking-wide transition-all select-none cursor-pointer ${
+            activeJobsSubTab === "active"
+              ? "bg-white dark:bg-stone-800 text-emerald-600 dark:text-emerald-400 shadow-sm"
+              : "text-gray-500 hover:text-gray-800 dark:hover:text-stone-300"
+          }`}
+        >
+          <Hammer className="w-3.5 h-3.5" />
+          <span>Active Jobs & Tickets</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveJobsSubTab("history")}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-black tracking-wide transition-all select-none cursor-pointer ${
+            activeJobsSubTab === "history"
+              ? "bg-white dark:bg-stone-800 text-amber-600 dark:text-amber-400 shadow-sm"
+              : "text-gray-500 hover:text-gray-800 dark:hover:text-stone-300"
+          }`}
+        >
+          <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span>Jobs Audit History Log</span>
+        </button>
+      </div>
+
+      {activeJobsSubTab === "active" ? (
+        <>
+          {/* Search and Advanced Filters */}
+          <div className="space-y-2">
         <div className="flex gap-2">
           <div className="flex-1 relative">
             <Search className="absolute left-3.5 top-3 w-4 h-4 text-gray-400 dark:text-stone-500" />
@@ -1066,6 +1218,167 @@ export default function ServicesTab({
           })
         )}
       </div>
+        </>
+      ) : (
+        <div className="space-y-4" id="jobs-history-ledger-container">
+          {/* Quick Header stats */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 p-3 rounded-2xl text-left shadow-xs">
+              <span className="text-[10px] text-gray-400 dark:text-stone-500 font-bold block uppercase">Total Events</span>
+              <span className="text-sm font-black text-amber-600 dark:text-amber-400 font-mono mt-1 block">
+                {allJobsHistory.length} actions
+              </span>
+            </div>
+            <div className="bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 p-3 rounded-2xl text-left shadow-xs">
+              <span className="text-[10px] text-gray-400 dark:text-stone-500 font-bold block uppercase">Status Updates</span>
+              <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono mt-1 block">
+                {allJobsHistory.filter(e => e.type === "status").length} changes
+              </span>
+            </div>
+            <div className="bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 p-3 rounded-2xl text-left shadow-xs">
+              <span className="text-[10px] text-gray-400 dark:text-stone-500 font-bold block uppercase">Part Swaps</span>
+              <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 font-mono mt-1 block">
+                {allJobsHistory.filter(e => e.type === "replacement").length} parts
+              </span>
+            </div>
+          </div>
+
+          {/* Search and filters */}
+          <div className="bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 p-4 rounded-3xl space-y-3 shadow-xs">
+            <div className="relative">
+              <Search className="absolute left-3.5 top-3 w-4 h-4 text-gray-400 dark:text-stone-500" />
+              <input
+                type="text"
+                placeholder="Search jobs audit log by JobNo, Client, Operator, Part..."
+                value={jobsHistorySearch}
+                onChange={e => setJobsHistorySearch(e.target.value)}
+                className="w-full text-xs bg-slate-50 dark:bg-stone-850 border border-gray-100 dark:border-stone-800/80 rounded-xl pl-9.5 pr-4 py-2.5 focus:outline-none focus:border-amber-500 text-gray-800 dark:text-stone-200"
+              />
+            </div>
+
+            <div className="flex gap-1 overflow-x-auto py-1 items-center select-none no-scrollbar">
+              <span className="text-[9px] font-black uppercase text-gray-400 tracking-wider mr-1 shrink-0">Filter Type:</span>
+              <button
+                type="button"
+                onClick={() => setJobsHistoryFilterType("All")}
+                className={`px-2.5 py-1 text-[9px] font-extrabold rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                  jobsHistoryFilterType === "All"
+                    ? "bg-amber-600 border-amber-600 text-white"
+                    : "bg-slate-50 dark:bg-stone-850 border-gray-100 dark:border-stone-800 text-gray-500 dark:text-stone-400 hover:text-gray-800"
+                }`}
+              >
+                All Events
+              </button>
+              <button
+                type="button"
+                onClick={() => setJobsHistoryFilterType("status")}
+                className={`px-2.5 py-1 text-[9px] font-extrabold rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                  jobsHistoryFilterType === "status"
+                    ? "bg-amber-600 border-amber-600 text-white"
+                    : "bg-slate-50 dark:bg-stone-850 border-gray-100 dark:border-stone-800 text-gray-500 dark:text-stone-400 hover:text-gray-800"
+                }`}
+              >
+                Status Changes ⚙️
+              </button>
+              <button
+                type="button"
+                onClick={() => setJobsHistoryFilterType("location")}
+                className={`px-2.5 py-1 text-[9px] font-extrabold rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                  jobsHistoryFilterType === "location"
+                    ? "bg-amber-600 border-amber-600 text-white"
+                    : "bg-slate-50 dark:bg-stone-850 border-gray-100 dark:border-stone-800 text-gray-500 dark:text-stone-400 hover:text-gray-800"
+                }`}
+              >
+                Location Shifts 📍
+              </button>
+              <button
+                type="button"
+                onClick={() => setJobsHistoryFilterType("replacement")}
+                className={`px-2.5 py-1 text-[9px] font-extrabold rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                  jobsHistoryFilterType === "replacement"
+                    ? "bg-amber-600 border-amber-600 text-white"
+                    : "bg-slate-50 dark:bg-stone-850 border-gray-100 dark:border-stone-800 text-gray-500 dark:text-stone-400 hover:text-gray-800"
+                }`}
+              >
+                Spare Part Swaps 🔧
+              </button>
+            </div>
+          </div>
+
+          {/* History Event Feed */}
+          <div className="space-y-3">
+            {filteredJobsHistory.length === 0 ? (
+              <div className="text-center p-10 bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 rounded-2xl shadow-sm">
+                <Clock className="w-8 h-8 text-gray-300 dark:text-stone-700 mx-auto mb-2" />
+                <h4 className="text-xs font-bold text-gray-700 dark:text-stone-300">No Audit Events Located</h4>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  Adjust search or filter parameters to locate service logs.
+                </p>
+              </div>
+            ) : (
+              filteredJobsHistory.map((ev, index) => {
+                const isStatus = ev.type === "status";
+                const isLoc = ev.type === "location";
+
+                return (
+                  <div
+                    key={index}
+                    onClick={() => setSelectedJob(ev.rawJob)}
+                    className="bg-white dark:bg-stone-900 border border-gray-100 dark:border-stone-800 p-4 rounded-xl text-left shadow-sm hover:border-amber-500/25 dark:hover:border-amber-500/10 cursor-pointer hover:shadow-md transition-all relative overflow-hidden"
+                  >
+                    {/* Visual Accent */}
+                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+                      isStatus 
+                        ? "bg-emerald-500" 
+                        : isLoc 
+                          ? "bg-blue-500" 
+                          : "bg-indigo-500"
+                    }`}></div>
+
+                    <div className="flex justify-between items-start pl-1 gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[9px] font-mono font-black uppercase tracking-wider bg-slate-100 dark:bg-stone-800 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded">
+                            Ticket #{ev.jobId}
+                          </span>
+                          <span className="text-[9px] font-mono font-black uppercase tracking-wider bg-slate-100 dark:bg-stone-800 text-gray-500 dark:text-stone-400 px-2 py-0.5 rounded">
+                            Item {ev.itemId}
+                          </span>
+                          <span className="text-[9px] font-semibold text-gray-400">
+                            by {ev.operator}
+                          </span>
+                        </div>
+
+                        <h4 className="text-xs font-black text-gray-800 dark:text-stone-100 mt-2 truncate">
+                          {ev.title}
+                        </h4>
+                        <p className="text-[10px] text-gray-500 dark:text-stone-400 mt-1 leading-relaxed">
+                          {ev.detail}
+                        </p>
+                        <p className="text-[9px] text-gray-400 mt-1 font-medium italic">
+                          Client: {ev.customerName} • Device: {ev.brand} {ev.modelNo}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col items-end shrink-0 select-none">
+                        <span className="text-[9px] font-mono text-gray-400 dark:text-stone-500">
+                          {new Date(ev.timestamp).toLocaleDateString()}
+                        </span>
+                        <span className="text-[8px] font-mono text-gray-400 dark:text-stone-500">
+                          {new Date(ev.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <span className="mt-2 text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 dark:bg-stone-800 text-gray-600 dark:text-stone-300">
+                          {ev.type}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Slide-Up Bottom Sheet Modal: Job Full Details and item workflow actions */}
       {selectedJob && (
@@ -1929,15 +2242,15 @@ export default function ServicesTab({
 
                       {merchantDetails.merchantUpi && (
                         <div className="flex justify-between items-center bg-white dark:bg-black/40 px-2 py-1.5 rounded-lg border border-gray-200 dark:border-stone-800 font-mono text-[10px]">
-                          <span className="text-gray-700 dark:text-stone-300">UPI ID: <span className="font-black text-indigo-600 dark:text-indigo-400">{merchantDetails.merchantUpi}</span></span>
+                          <span className="text-gray-700 dark:text-stone-300">Account / Link ID: <span className="font-black text-indigo-600 dark:text-indigo-400">{merchantDetails.merchantUpi}</span></span>
                           <button
                             type="button"
                             onClick={() => {
                               try {
                                 navigator.clipboard.writeText(merchantDetails.merchantUpi);
-                                showToast("Registered UPI copied successfully! 📋", "success");
+                                showToast("Registered account handle details copied successfully! 📋", "success");
                               } catch (_) {
-                                showToast(`UPI: ${merchantDetails.merchantUpi}`, "info");
+                                showToast(`ID: ${merchantDetails.merchantUpi}`, "info");
                               }
                             }}
                             className="bg-indigo-50 hover:bg-indigo-100 dark:bg-stone-850 dark:hover:bg-stone-800 text-indigo-600 dark:text-indigo-400 text-[8px] tracking-wider uppercase font-black px-2 py-1 rounded cursor-pointer border-none"
@@ -1969,7 +2282,7 @@ export default function ServicesTab({
                             </button>
                           </div>
                           {merchantDetails.merchantIfsc && (
-                            <div className="text-gray-700 dark:text-stone-300">IFSC Code: <span className="font-bold text-gray-900 dark:text-stone-100">{merchantDetails.merchantIfsc}</span></div>
+                            <div className="text-gray-700 dark:text-stone-300">Transit / SWIFT Code: <span className="font-bold text-gray-900 dark:text-stone-100">{merchantDetails.merchantIfsc}</span></div>
                           )}
                         </div>
                       )}

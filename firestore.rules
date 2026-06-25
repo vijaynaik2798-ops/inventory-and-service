@@ -31,11 +31,15 @@ service cloud.firestore {
     // --- Role-Based Access Controls (ABAC) from Firestore Users ---
     // Safely reads the role of the user within /users/{userId} to check privileges
     function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : 'none';
     }
 
     function getUserStatus() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status;
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status
+        : 'none';
     }
 
     function isUserActive() {

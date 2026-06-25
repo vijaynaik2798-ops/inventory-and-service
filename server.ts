@@ -180,8 +180,8 @@ app.post("/api/ai/draft-msg", async (req, res) => {
 
 // --- Server-Side JSON database key-value persistence ---
 import fs from "fs";
-import { initializeApp, getApps, getApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "firebase/firestore";
 
 const DB_FILE_PATH = path.join(process.cwd(), "server_db.json");
 
@@ -205,39 +205,33 @@ function writeServerDb(dbData: Record<string, string>) {
   }
 }
 
-// Initialize Firebase Admin on the Backend Server if possible
+// Initialize Firebase Client SDK on the Backend Server if possible
 const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
-let firestoreDb: any = null;
+let clientDb: any = null;
 
 if (fs.existsSync(firebaseConfigPath)) {
   try {
     const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
     if (firebaseConfig && firebaseConfig.projectId) {
-      let adminApp;
-      if (getApps().length === 0) {
-        adminApp = initializeApp({
-          projectId: firebaseConfig.projectId
-        });
-      } else {
-        adminApp = getApp();
-      }
-      firestoreDb = firebaseConfig.firestoreDatabaseId 
-        ? getFirestore(adminApp, firebaseConfig.firestoreDatabaseId)
-        : getFirestore(adminApp);
-      console.log("Firebase Admin initialized successfully on backend server with project ID:", firebaseConfig.projectId, "and database ID:", firebaseConfig.firestoreDatabaseId || "(default)");
+      const clientApp = initializeApp(firebaseConfig);
+      clientDb = firebaseConfig.firestoreDatabaseId 
+        ? getFirestore(clientApp, firebaseConfig.firestoreDatabaseId)
+        : getFirestore(clientApp);
+      console.log("Firebase Client initialized successfully on backend server with project ID:", firebaseConfig.projectId, "and database ID:", firebaseConfig.firestoreDatabaseId || "(default)");
     }
   } catch (err) {
-    console.error("Failed to initialize Firebase Admin on backend server:", err);
+    console.error("Failed to initialize Firebase Client on backend server:", err);
   }
 }
 
 app.get("/api/db/:key", async (req, res) => {
   const { key } = req.params;
 
-  if (firestoreDb) {
+  if (clientDb) {
     try {
-      const docSnap = await firestoreDb.collection("kv_store").doc(key).get();
-      if (docSnap.exists) {
+      const docRef = doc(clientDb, "kv_store", key);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
         const data = docSnap.data();
         return res.json({ value: data && data.value !== undefined ? data.value : null });
       } else {
@@ -246,7 +240,7 @@ app.get("/api/db/:key", async (req, res) => {
         const fallbackValue = dbData[key];
         if (fallbackValue !== undefined) {
           // Sync it immediately so it gets stored in Firestore
-          await firestoreDb.collection("kv_store").doc(key).set({ value: fallbackValue, updatedAt: new Date().toISOString() });
+          await setDoc(docRef, { value: fallbackValue, updatedAt: new Date().toISOString() });
           return res.json({ value: fallbackValue });
         }
         return res.json({ value: null });
@@ -274,10 +268,11 @@ app.post("/api/db/:key", async (req, res) => {
   dbData[key] = value;
   writeServerDb(dbData);
 
-  if (firestoreDb) {
+  if (clientDb) {
     try {
-      await firestoreDb.collection("kv_store").doc(key).set({ value, updatedAt: new Date().toISOString() });
-      console.log(`Backend saved key "${key}" securely to Firebase Cloud Firestore via Admin SDK.`);
+      const docRef = doc(clientDb, "kv_store", key);
+      await setDoc(docRef, { value, updatedAt: new Date().toISOString() });
+      console.log(`Backend saved key "${key}" securely to Firebase Cloud Firestore via Client SDK.`);
       return res.json({ success: true, key, stored: "firestore" });
     } catch (err: any) {
       console.error(`Firebase Firestore write error for key "${key}":`, err);
@@ -288,12 +283,13 @@ app.post("/api/db/:key", async (req, res) => {
 });
 
 app.get("/api/db-batch", async (req, res) => {
-  if (firestoreDb) {
+  if (clientDb) {
     try {
-      const colSnap = await firestoreDb.collection("kv_store").get();
+      const colRef = collection(clientDb, "kv_store");
+      const colSnap = await getDocs(colRef);
       const data: Record<string, string> = {};
 
-      colSnap.forEach((docSnap: any) => {
+      colSnap.forEach((docSnap) => {
         const docData = docSnap.data();
         if (docData && docData.value !== undefined) {
           data[docSnap.id] = docData.value;
@@ -323,13 +319,14 @@ app.post("/api/db-batch", async (req, res) => {
   const merged = { ...dbData, ...payload };
   writeServerDb(merged);
 
-  if (firestoreDb) {
+  if (clientDb) {
     try {
       const writePromises = Object.entries(payload).map(async ([key, value]) => {
-        await firestoreDb.collection("kv_store").doc(key).set({ value, updatedAt: new Date().toISOString() });
+        const docRef = doc(clientDb, "kv_store", key);
+        await setDoc(docRef, { value, updatedAt: new Date().toISOString() });
       });
       await Promise.all(writePromises);
-      console.log(`Backend batch-saved ${Object.keys(payload).length} keys securely to Firebase Cloud Firestore via Admin SDK.`);
+      console.log(`Backend batch-saved ${Object.keys(payload).length} keys securely to Firebase Cloud Firestore via Client SDK.`);
       return res.json({ success: true, stored: "firestore" });
     } catch (err: any) {
       console.error("Firebase Firestore batch write error:", err);
