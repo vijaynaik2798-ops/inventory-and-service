@@ -2900,14 +2900,14 @@ export default function MoreTab({
                 Authorize Companion Session?
               </h3>
               <p className="text-[10.5px] text-gray-500 dark:text-stone-400 leading-normal font-sans">
-                An external device is requesting network console access under your login credential (<span className="font-bold text-gray-700 dark:text-stone-300">{currentUser?.name || "Vijay Naik"}</span>).
+                An external device is requesting network console access under your login credential (<span className="font-bold text-gray-700 dark:text-stone-300">{currentUser?.name || "System Owner"}</span>).
               </p>
             </div>
 
             <div className="p-3 bg-slate-50 dark:bg-stone-950 rounded-xl border border-gray-100 dark:border-stone-850 font-mono text-[9px] space-y-1 text-gray-500 dark:text-stone-400">
               <div>REQUEST_ID: {pendingLoginRequest.sessionId.substring(0, 18)}...</div>
               <div>CONNECTION: ACTIVE HTTPS SSL TUNNEL</div>
-              <div>OPERATOR: {currentUser?.email || "vijaynaik2798@gmail.com"}</div>
+              <div>OPERATOR: {currentUser?.email || "owner@stockivo.com"}</div>
             </div>
 
             <div className="grid grid-cols-2 gap-2 pt-1 font-sans">
@@ -2915,10 +2915,10 @@ export default function MoreTab({
                 type="button"
                 onClick={() => {
                   const targetUser = {
-                    id: currentUser?.id || "bypass_vijay_owner_uid",
-                    name: currentUser?.name || "Vijay Naik",
+                    id: currentUser?.id || "default_owner_uid",
+                    name: currentUser?.name || "System Owner",
                     role: currentUser?.role || "Owner",
-                    email: currentUser?.email || "vijaynaik2798@gmail.com"
+                    email: currentUser?.email || "owner@stockivo.com"
                   };
                   localStorage.setItem(`approved_session_${pendingLoginRequest.sessionId}`, JSON.stringify({ user: targetUser }));
                   // Dispatch storage event to sync other local frames or intervals instantly

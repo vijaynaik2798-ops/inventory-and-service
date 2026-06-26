@@ -266,7 +266,7 @@ export default function App() {
   const syncWithCloudStorage = async (silently = false) => {
     if (!silently) setSyncStatus("syncing");
     try {
-      const data = await loadAllData();
+      const data = await loadAllData(!silently);
       setCustomers(data.customers);
       setServices(data.services);
       setInventory(data.inventory);

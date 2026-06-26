@@ -1,7 +1,7 @@
 import { Sun, Moon, RefreshCw, Layers } from "lucide-react";
 import { User } from "../types";
 // @ts-ignore
-import stockivoLogo from "../assets/images/stockivo_logo_1781919165591.jpg";
+import stockivoLogo from "../assets/images/stockivo_logo_v4_1782356434674.jpg";
 
 interface HeaderProps {
   currentUser: User | null;

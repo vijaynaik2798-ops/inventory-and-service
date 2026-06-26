@@ -235,34 +235,93 @@ export interface AppData {
   subscription: SubscriptionDetail;
 }
 
-export const loadAllData = async (): Promise<AppData> => {
-  const [
-    custRaw,
-    servRaw,
-    invRaw,
-    serviceLocRaw,
-    stockLocRaw,
-    payMethodsRaw,
-    techRaw,
-    usersRaw,
-    sessRaw,
-    counterRaw,
-    waRaw,
-    subRaw
-  ] = await Promise.all([
-    getCloudItem("inventory_service_customers"),
-    getCloudItem("inventory_service_services"),
-    getCloudItem("inventory_service_inventory"),
-    getCloudItem("inventory_service_service_locations"),
-    getCloudItem("inventory_service_stock_locations"),
-    getCloudItem("inventory_service_payment_methods"),
-    getCloudItem("inventory_service_technicians"),
-    getCloudItem("inventory_service_users"),
-    Promise.resolve(typeof window !== "undefined" ? localStorage.getItem("inventory_service_session_v2") : null),
-    getCloudItem("inventory_service_job_counter"),
-    getCloudItem("inventory_service_wa_templates"),
-    getCloudItem("inventory_service_subscription")
-  ]);
+export const loadAllData = async (forceCloudQuery = false): Promise<AppData> => {
+  let custRaw: string | null = null;
+  let servRaw: string | null = null;
+  let invRaw: string | null = null;
+  let serviceLocRaw: string | null = null;
+  let stockLocRaw: string | null = null;
+  let payMethodsRaw: string | null = null;
+  let techRaw: string | null = null;
+  let usersRaw: string | null = null;
+  let sessRaw: string | null = null;
+  let counterRaw: string | null = null;
+  let waRaw: string | null = null;
+  let subRaw: string | null = null;
+
+  try {
+    const res = await fetch("/api/db-batch");
+    if (res.ok) {
+      const batch = await res.json();
+      if (batch && batch.success && batch.data) {
+        const dbData = batch.data;
+        custRaw = dbData["inventory_service_customers"] || null;
+        servRaw = dbData["inventory_service_services"] || null;
+        invRaw = dbData["inventory_service_inventory"] || null;
+        serviceLocRaw = dbData["inventory_service_service_locations"] || null;
+        stockLocRaw = dbData["inventory_service_stock_locations"] || null;
+        payMethodsRaw = dbData["inventory_service_payment_methods"] || null;
+        techRaw = dbData["inventory_service_technicians"] || null;
+        usersRaw = dbData["inventory_service_users"] || null;
+        counterRaw = dbData["inventory_service_job_counter"] || null;
+        waRaw = dbData["inventory_service_wa_templates"] || null;
+        subRaw = dbData["inventory_service_subscription"] || null;
+
+        // Keep local cache in sync
+        Object.entries(dbData).forEach(([key, val]) => {
+          if (val !== undefined && val !== null) {
+            try {
+              localStorage.setItem(key, val as string);
+            } catch (_) {}
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("Batch load failed, falling back to sequential:", err);
+  }
+
+  sessRaw = typeof window !== "undefined" ? localStorage.getItem("inventory_service_session_v2") : null;
+
+  // Fallback to sequential individual gets if batch fetched nothing
+  if (!custRaw && !servRaw && !invRaw) {
+    const [
+      fallbackCust,
+      fallbackServ,
+      fallbackInv,
+      fallbackServiceLoc,
+      fallbackStockLoc,
+      fallbackPayMethods,
+      fallbackTech,
+      fallbackUsers,
+      fallbackCounter,
+      fallbackWa,
+      fallbackSub
+    ] = await Promise.all([
+      getCloudItem("inventory_service_customers"),
+      getCloudItem("inventory_service_services"),
+      getCloudItem("inventory_service_inventory"),
+      getCloudItem("inventory_service_service_locations"),
+      getCloudItem("inventory_service_stock_locations"),
+      getCloudItem("inventory_service_payment_methods"),
+      getCloudItem("inventory_service_technicians"),
+      getCloudItem("inventory_service_users"),
+      getCloudItem("inventory_service_job_counter"),
+      getCloudItem("inventory_service_wa_templates"),
+      getCloudItem("inventory_service_subscription")
+    ]);
+    custRaw = fallbackCust;
+    servRaw = fallbackServ;
+    invRaw = fallbackInv;
+    serviceLocRaw = fallbackServiceLoc;
+    stockLocRaw = fallbackStockLoc;
+    payMethodsRaw = fallbackPayMethods;
+    techRaw = fallbackTech;
+    usersRaw = fallbackUsers;
+    counterRaw = fallbackCounter;
+    waRaw = fallbackWa;
+    subRaw = fallbackSub;
+  }
 
   const parsedCustomers = custRaw ? JSON.parse(custRaw) : [];
   const parsedServices = servRaw ? JSON.parse(servRaw) : [];
@@ -280,11 +339,11 @@ export const loadAllData = async (): Promise<AppData> => {
   let services = parsedServices;
   let inventory = parsedInventory;
 
-  // Prioritize direct query data from real cloud Firestore collections if authenticated
+  // Prioritize direct query data from real cloud Firestore collections if authenticated and requested
   try {
     const fb = await import("./firebase");
     const { collection, getDocs } = await import("firebase/firestore");
-    if (fb.auth.currentUser) {
+    if (fb.auth.currentUser && forceCloudQuery) {
       const [custSnap, servSnap, invSnap] = await Promise.all([
         getDocs(collection(fb.db, "customers")),
         getDocs(collection(fb.db, "service_jobs")),

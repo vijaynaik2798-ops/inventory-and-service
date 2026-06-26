@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { User as AppUser, UserRole, Staff } from "../types";
 // @ts-ignore
-import stockivoLogo from "../assets/images/stockivo_logo_1781919165591.jpg";
+import stockivoLogo from "../assets/images/stockivo_logo_v4_1782356434674.jpg";
 import { Layers, QrCode, MonitorSmartphone, ShieldAlert, CheckCircle, RefreshCw, Eye, EyeOff, Mail, Lock, User, UserPlus, LogIn, Key } from "lucide-react";
 import { firebaseSignInWithGoogle, signInOperator, registerNewOperator } from "../utils/firebase";
 import { generateQRUrl } from "../utils/helpers";
@@ -298,26 +298,6 @@ export default function AuthScreen({
             </p>
 
             <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-stone-800/80">
-              <span className="text-[8px] font-mono font-extrabold text-[#6366f1] dark:text-indigo-400 tracking-widest block uppercase text-left">
-                🛠️ SANDBOX BYPASS (Local Test suite)
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  const simulatedUser = {
-                    id: "bypass_vijay_owner_uid",
-                    name: "Vijay Naik",
-                    role: "Owner",
-                    email: "vijaynaik2798@gmail.com"
-                  };
-                  localStorage.setItem(`approved_session_${qrSessionId}`, JSON.stringify({ user: simulatedUser }));
-                  showToast("Local device sandbox loop approved successfully!", "success");
-                }}
-                className="w-full text-center py-2.5 px-3.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-black text-[9px] uppercase tracking-widest rounded-xl transition-all border border-dashed border-emerald-500/25 active:scale-97 cursor-pointer"
-              >
-                ⚡ Instantly simulate scan/approval
-              </button>
-              
               <button
                 type="button"
                 onClick={() => {
@@ -363,7 +343,7 @@ export default function AuthScreen({
             {authTab === "signin" ? (
               <form onSubmit={handleEmailSignIn} className="space-y-3">
                 <div className="space-y-1">
-                  <label className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider">
+                  <label htmlFor="login-email" className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider">
                     Email Address
                   </label>
                   <div className="relative">
@@ -371,6 +351,9 @@ export default function AuthScreen({
                       <Mail className="w-3.5 h-3.5 text-gray-400" />
                     </span>
                     <input
+                      id="login-email"
+                      name="email"
+                      autoComplete="username email"
                       type="email"
                       required
                       value={formEmail}
@@ -383,7 +366,7 @@ export default function AuthScreen({
 
                 <div className="space-y-1">
                   <div className="flex justify-between items-center">
-                    <label className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider">
+                    <label htmlFor="login-password" className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider">
                       Password
                     </label>
                   </div>
@@ -392,6 +375,9 @@ export default function AuthScreen({
                       <Lock className="w-3.5 h-3.5 text-gray-400" />
                     </span>
                     <input
+                      id="login-password"
+                      name="password"
+                      autoComplete="current-password"
                       type={showPwd ? "text" : "password"}
                       required
                       value={formPassword}
@@ -400,6 +386,7 @@ export default function AuthScreen({
                       className="w-full bg-slate-50 dark:bg-stone-950 border border-gray-150 dark:border-stone-850 rounded-xl py-2 pl-9 pr-10 text-xs font-medium text-gray-800 dark:text-stone-250 placeholder-gray-400 dark:placeholder-stone-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50"
                     />
                     <button
+                      id="toggle-login-password"
                       type="button"
                       onClick={() => setShowPwd(!showPwd)}
                       className="absolute inset-y-0 right-0 pr-3 flex items-center outline-none border-none bg-transparent text-gray-400 hover:text-gray-600 dark:hover:text-stone-300"
@@ -431,7 +418,7 @@ export default function AuthScreen({
               /* Content Tab 2: Register Form */
               <form onSubmit={handleEmailSignUp} className="space-y-3">
                 <div className="space-y-1">
-                  <label className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider">
+                  <label htmlFor="register-name" className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider">
                     Full Operator Name
                   </label>
                   <div className="relative">
@@ -439,6 +426,9 @@ export default function AuthScreen({
                       <User className="w-3.5 h-3.5 text-gray-400" />
                     </span>
                     <input
+                      id="register-name"
+                      name="name"
+                      autoComplete="name"
                       type="text"
                       required
                       value={regName}
@@ -450,7 +440,7 @@ export default function AuthScreen({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider">
+                  <label htmlFor="register-email" className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider">
                     Work Email Address
                   </label>
                   <div className="relative">
@@ -458,6 +448,9 @@ export default function AuthScreen({
                       <Mail className="w-3.5 h-3.5 text-gray-400" />
                     </span>
                     <input
+                      id="register-email"
+                      name="email"
+                      autoComplete="email username"
                       type="email"
                       required
                       value={regEmail}
@@ -469,7 +462,7 @@ export default function AuthScreen({
                 </div>
 
                 <div className="space-y-1 flex-1">
-                  <label className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider flex justify-between items-center">
+                  <label htmlFor="register-password" className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider flex justify-between items-center">
                     <span>Master Password</span>
                     {regPassword && (
                       <span className={`text-[8px] font-black uppercase tracking-widest ${
@@ -486,6 +479,9 @@ export default function AuthScreen({
                       <Lock className="w-3.5 h-3.5 text-gray-400" />
                     </span>
                     <input
+                      id="register-password"
+                      name="password"
+                      autoComplete="new-password"
                       type={showPwd ? "text" : "password"}
                       required
                       value={regPassword}
@@ -494,6 +490,7 @@ export default function AuthScreen({
                       className="w-full bg-slate-50 dark:bg-stone-950 border border-gray-150 dark:border-stone-850 rounded-xl py-2 pl-9 pr-10 text-xs font-semibold text-gray-800 dark:text-stone-250 placeholder-gray-400 dark:placeholder-stone-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 font-sans"
                     />
                     <button
+                      id="toggle-register-password"
                       type="button"
                       onClick={() => setShowPwd(!showPwd)}
                       className="absolute inset-y-0 right-0 pr-3 flex items-center outline-none border-none bg-transparent text-gray-400 hover:text-gray-600 dark:hover:text-stone-300 pointer-events-auto"
@@ -650,25 +647,6 @@ export default function AuthScreen({
                 >
                   <QrCode className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
                   <span>Instant QR</span>
-                </button>
-              </div>
-
-              {/* Quick Sandbox Bypass */}
-              <div className="pt-1 border-t border-dashed border-gray-150/85 dark:border-stone-800/80">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onLoginSuccess({
-                      id: "bypass_vijay_owner_uid",
-                      name: "Vijay Naik",
-                      role: "Owner",
-                      email: "vijaynaik2798@gmail.com"
-                    });
-                    showToast("Logged in successfully as Owner Vijay Naik!", "success");
-                  }}
-                  className="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-black text-[9.5px] uppercase tracking-widest rounded-xl transition-all cursor-pointer border border-dashed border-emerald-500/25 active:scale-97 text-center block"
-                >
-                  ⚡ Instant Developer Bypass (Vijay Naik)
                 </button>
               </div>
 
