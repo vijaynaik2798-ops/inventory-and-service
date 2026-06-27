@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/qr_login_service.dart';
 import 'dashboard_screen.dart';
 import 'qr_scanner_view.dart';
@@ -76,8 +77,11 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  void _handleEmailSubmit() {
-    if (_emailController.text.trim().isEmpty || _passwordController.text.trim().isEmpty) {
+  void _handleEmailSubmit() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("All fields are required!")),
       );
@@ -86,23 +90,68 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
     
-    // Simulate real auth validation (coupled to Firebase auth dynamically in production)
-    Future.delayed(const Duration(milliseconds: 1200), () {
-      setState(() => _isLoading = false);
-      String email = _emailController.text.trim().toLowerCase();
-      String role = "Staff";
-      String name = "Vijay Staff";
+    try {
+      // Connect to genuine Firebase Auth
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
 
-      if (email.contains("admin")) {
-        role = "Admin";
-        name = "Vijay Admin";
-      } else if (email.contains("manager")) {
-        role = "Manager";
-        name = "Suresh Manager";
+      final user = credential.user;
+      if (user != null) {
+        // Retrieve custom user operator roles and states from Cloud Firestore
+        final docSnap = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        if (docSnap.exists) {
+          final data = docSnap.data();
+          final name = data?['name'] ?? 'Staff User';
+          final role = data?['role'] ?? 'Staff';
+          final emailVal = data?['email'] ?? user.email ?? '';
+          final status = data?['status'] ?? 'active';
+
+          if (status == 'disabled' || status == 'locked') {
+            await FirebaseAuth.instance.signOut();
+            throw Exception("This operator account profile has been locked or disabled.");
+          }
+
+          _navigateToDashboard(name, emailVal, role);
+        } else {
+          // If profile does not exist yet (e.g. registered in Firebase Auth manually), bootstrap a default role
+          String role = "Staff";
+          String name = "Staff User";
+          if (email.contains("admin")) {
+            role = "Admin";
+            name = "Vijay Admin";
+          } else if (email.contains("manager")) {
+            role = "Manager";
+            name = "Suresh Manager";
+          }
+          
+          _navigateToDashboard(name, email, role);
+        }
+      } else {
+        throw Exception("Auth failed, returned empty user node.");
       }
-
-      _navigateToDashboard(name, email, role);
-    });
+    } on FirebaseAuthException catch (e) {
+      String errMsg = "Authentication failed. Please check credentials.";
+      if (e.code == 'user-not-found') {
+        errMsg = "No user found with this email.";
+      } else if (e.code == 'wrong-password') {
+        errMsg = "Incorrect password provided.";
+      } else if (e.code == 'user-disabled') {
+        errMsg = "This user account has been disabled.";
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errMsg)),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll("Exception:", "").trim())),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   void _navigateToDashboard(String name, String email, String role) {
@@ -301,6 +350,50 @@ class _LoginScreenState extends State<LoginScreen> {
                         const Text("QR code expired. Tap to regenerate."),
                       ],
                     ],
+                    
+                    const SizedBox(height: 24),
+                    const Divider(),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.08),
+                        border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.info_outline, size: 16, color: Colors.amber),
+                              SizedBox(width: 8),
+                              Text(
+                                "Using Google SSO?",
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.amber,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            "If you log in via Google Workspace Single Sign-On, you can connect this APK instantly using Companion QR Pairing:\n"
+                            "1. Select the 'QR Code pairing' tab above.\n"
+                            "2. Log into the Web App on your computer/laptop using Google SSO.\n"
+                            "3. Click the Scanner icon in the top right of the Web App, and scan this phone's QR code.\n"
+                            "This instantly authorizes and logs you into the APK!",
+                            style: TextStyle(
+                              fontSize: 10,
+                              height: 1.4,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),

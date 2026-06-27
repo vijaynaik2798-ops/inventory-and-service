@@ -397,6 +397,10 @@ export async function signInOperator(email: string, password: string) {
         await setDoc(docRef, fData);
       } else {
         fData = userSnap.data();
+        if (fData && (fData.status === "disabled" || fData.status === "locked")) {
+          await auth.signOut();
+          throw new Error(`This operator account is currently ${fData.status}. Please contact the system administrator.`);
+        }
       }
 
       // Reset failed counters and append device
@@ -436,10 +440,31 @@ export async function firebaseSignInWithGoogle() {
   const res = await signInWithPopup(auth, provider);
   if (res.user) {
     const docRef = doc(db, "users", res.user.uid);
-    let userSnap = await getDoc(docRef);
     let fData: any;
 
-    if (!userSnap.exists()) {
+    try {
+      const userSnap = await getDoc(docRef);
+      if (!userSnap.exists()) {
+        fData = {
+          uid: res.user.uid,
+          name: res.user.displayName || "Google Operator",
+          email: res.user.email?.toLowerCase() || "",
+          role: "Staff",
+          status: "active",
+          failedAttempts: 0,
+          devices: [getOrCreateDeviceId()],
+          createdAt: new Date().toISOString()
+        };
+        try {
+          await setDoc(docRef, fData);
+        } catch (writeErr) {
+          console.warn("Failed to setDoc on Google sign-in (client offline):", writeErr);
+        }
+      } else {
+        fData = userSnap.data();
+      }
+    } catch (err: any) {
+      console.warn("Firestore lookup failed during Google Sign-In, falling back to local user state:", err);
       fData = {
         uid: res.user.uid,
         name: res.user.displayName || "Google Operator",
@@ -450,14 +475,27 @@ export async function firebaseSignInWithGoogle() {
         devices: [getOrCreateDeviceId()],
         createdAt: new Date().toISOString()
       };
-      await setDoc(docRef, fData);
-    } else {
-      fData = userSnap.data();
     }
 
-    await resetFailedLoginAttempts(res.user.uid, res.user.email || "");
-    await updateActiveDevices(res.user.uid, getOrCreateDeviceId(), "login");
-    await logAuditEntry(res.user.email || "google_auth", res.user.uid, "Connected using Google SSO Credential syncs", "success");
+    // Safely attempt optional post-login writes without crashing the auth process if offline
+    try {
+      await resetFailedLoginAttempts(res.user.uid, res.user.email || "");
+    } catch (err) {
+      console.warn("Could not reset failed login attempts (offline):", err);
+    }
+
+    try {
+      await updateActiveDevices(res.user.uid, getOrCreateDeviceId(), "login");
+    } catch (err) {
+      console.warn("Could not update active devices (offline):", err);
+    }
+
+    try {
+      await logAuditEntry(res.user.email || "google_auth", res.user.uid, "Connected using Google SSO Credential syncs", "success");
+    } catch (err) {
+      console.warn("Could not log audit entry (offline):", err);
+    }
+
     return { user: res.user, firestoreUser: fData };
   }
   throw new Error("Google login handshake aborted.");

@@ -525,7 +525,7 @@ export default function MoreTab({
     if (!decodedText) return;
     
     // Check if scan represents a one-time login request QR instead of standard console link
-    if (decodedText.startsWith("STOCKIVO-QR-LOGIN-REQ:")) {
+    if (decodedText.startsWith("STOCKIVO-QR-LOGIN-REQ:") || decodedText.startsWith("SECURE_QR_LOGIN:")) {
       const parts = decodedText.split(":");
       const sId = parts[1] || "";
       setPendingLoginRequest({ sessionId: sId });
@@ -2913,17 +2913,36 @@ export default function MoreTab({
             <div className="grid grid-cols-2 gap-2 pt-1 font-sans">
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   const targetUser = {
                     id: currentUser?.id || "default_owner_uid",
                     name: currentUser?.name || "System Owner",
                     role: currentUser?.role || "Owner",
                     email: currentUser?.email || "owner@stockivo.com"
                   };
+                  // Write to local storage for local emulation compatibility
                   localStorage.setItem(`approved_session_${pendingLoginRequest.sessionId}`, JSON.stringify({ user: targetUser }));
                   // Dispatch storage event to sync other local frames or intervals instantly
                   window.dispatchEvent(new Event("storage_sync2")); 
-                  showToast("Authorized companion session successfully! Clean handshake.", "success");
+                  
+                  // Also write to cloud Firestore for real companion remote device connection sync
+                  try {
+                    const fb = await import("../utils/firebase");
+                    const { doc, updateDoc, serverTimestamp } = await import("firebase/firestore");
+                    await updateDoc(doc(fb.db, "qr_login_sessions", pendingLoginRequest.sessionId), {
+                      status: "APPROVED",
+                      approvedBy: targetUser.name,
+                      approvedUserRole: targetUser.role,
+                      approvedUserEmail: targetUser.email,
+                      authToken: targetUser.id,
+                      approvedAt: serverTimestamp()
+                    });
+                    showToast("Authorized companion session successfully! Clean handshake.", "success");
+                  } catch (err: any) {
+                    console.error("Cloud-based QR approve sync failed:", err);
+                    showToast("Authorized companion session locally.", "success");
+                  }
+                  
                   setPendingLoginRequest(null);
                 }}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase py-2.5 rounded-xl text-center shadow-md transition-all cursor-pointer border-none"
@@ -2933,9 +2952,23 @@ export default function MoreTab({
 
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   localStorage.setItem(`approved_session_${pendingLoginRequest.sessionId}`, JSON.stringify({ denied: true }));
-                  showToast("Login request rejected safely.", "info");
+                  
+                  // Reject on cloud Firestore for remote companion devices
+                  try {
+                    const fb = await import("../utils/firebase");
+                    const { doc, updateDoc, serverTimestamp } = await import("firebase/firestore");
+                    await updateDoc(doc(fb.db, "qr_login_sessions", pendingLoginRequest.sessionId), {
+                      status: "DENIED",
+                      rejectedAt: serverTimestamp()
+                    });
+                    showToast("Login request rejected safely.", "info");
+                  } catch (err: any) {
+                    console.error("Cloud-based QR reject sync failed:", err);
+                    showToast("Login request rejected safely.", "info");
+                  }
+
                   setPendingLoginRequest(null);
                 }}
                 className="bg-stone-100 hover:bg-rose-100 dark:bg-stone-800 dark:hover:bg-rose-950/20 text-stone-700 hover:text-rose-600 dark:text-stone-300 dark:hover:text-rose-400 font-extrabold text-[10px] uppercase py-2.5 rounded-xl text-center transition-colors cursor-pointer border-none"

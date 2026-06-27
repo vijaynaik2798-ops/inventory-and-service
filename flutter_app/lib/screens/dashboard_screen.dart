@@ -63,8 +63,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         builder: (context) => QrScannerView(
           title: "Scan Companion QR Screen",
           onScanComplete: (scannedData) async {
-            if (scannedData.startsWith("SECURE_QR_LOGIN:")) {
-              final sessionId = scannedData.replaceFirst("SECURE_QR_LOGIN:", "");
+            if (scannedData.startsWith("SECURE_QR_LOGIN:") || scannedData.startsWith("STOCKIVO-QR-LOGIN-REQ:")) {
+              final sessionId = scannedData
+                  .replaceFirst("SECURE_QR_LOGIN:", "")
+                  .replaceFirst("STOCKIVO-QR-LOGIN-REQ:", "");
               _showApprovalSheet(sessionId);
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -421,12 +423,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 itemBuilder: (context, index) {
                   final item = _lowStockItems[index];
                   return Card(
-                    variant: CardVariant.outlined,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      side: BorderSide(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: ListTile(
                       title: Text(item.productName, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                       subtitle: Text("Model: ${item.modelNumber} | Loc: ${item.location}", style: const TextStyle(fontSize: 9)),
                       trailing: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, py: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: Colors.red[50],
                           borderRadius: BorderRadius.circular(8),

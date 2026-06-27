@@ -3,8 +3,9 @@ import { User as AppUser, UserRole, Staff } from "../types";
 // @ts-ignore
 import stockivoLogo from "../assets/images/stockivo_logo_v4_1782356434674.jpg";
 import { Layers, QrCode, MonitorSmartphone, ShieldAlert, CheckCircle, RefreshCw, Eye, EyeOff, Mail, Lock, User, UserPlus, LogIn, Key } from "lucide-react";
-import { firebaseSignInWithGoogle, signInOperator, registerNewOperator } from "../utils/firebase";
+import { firebaseSignInWithGoogle, signInOperator, registerNewOperator, db } from "../utils/firebase";
 import { generateQRUrl } from "../utils/helpers";
+import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
 
 interface AuthScreenProps {
   users: any[];
@@ -34,7 +35,7 @@ export default function AuthScreen({
   const [regName, setRegName] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [regPassword, setRegPassword] = useState("");
-  const [regRole, setRegRole] = useState<UserRole>("Technician");
+  const [regRole, setRegRole] = useState<UserRole>("Staff");
 
   // Real-time password strength analyzer for strong credentials
   const analyzePasswordStrength = (pwd: string) => {
@@ -79,17 +80,58 @@ export default function AuthScreen({
   };
 
   // Initialize unique session ID when entering QR Login mode
-  const handleEnableQrMode = () => {
+  const handleEnableQrMode = async () => {
     const randomId = "SESSION-" + Math.random().toString(36).substring(2, 8).toUpperCase() + "-" + Math.random().toString(36).substring(2, 6).toUpperCase();
     setQrSessionId(randomId);
     setShowQrMode(true);
-    showToast("One-time companion session QR generated!", "success");
+    
+    // Write placeholder to Firestore so secondary companion scans can find and update it
+    try {
+      await setDoc(doc(db, "qr_login_sessions", randomId), {
+        status: "PENDING",
+        createdAt: serverTimestamp(),
+        approvedBy: null,
+        approvedUserRole: null,
+        approvedUserEmail: null,
+        authToken: null
+      });
+      showToast("One-time companion session QR generated!", "success");
+    } catch (err: any) {
+      console.warn("Failed to register QR session placeholder in cloud:", err);
+      showToast("One-time companion session QR generated (Local Sync Mode).", "success");
+    }
   };
 
-  // Poll LocalStorage and window.storage for Remote Authorization approval token
+  // Poll LocalStorage and Firestore for Remote Authorization approval token
   useEffect(() => {
     if (!showQrMode || !qrSessionId) return;
 
+    // 1. Real-time Firestore sync listener
+    const docRef = doc(db, "qr_login_sessions", qrSessionId);
+    const unsubscribe = onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.status === "APPROVED") {
+          onLoginSuccess({
+            id: data.authToken || "QR_AUTH_USER_101",
+            name: data.approvedBy || "Remote Companion Operator",
+            role: (data.approvedUserRole || "Manager") as UserRole,
+            email: data.approvedUserEmail || "companion@stockivo.com"
+          });
+          showToast(`SSO Handshake complete! Welcome, ${data.approvedBy || "Operator"}.`, "success");
+          setShowQrMode(false);
+          setQrSessionId("");
+        } else if (data.status === "DENIED") {
+          showToast("Login request was rejected by remote device.", "error");
+          setShowQrMode(false);
+          setQrSessionId("");
+        }
+      }
+    }, (error) => {
+      console.warn("Firestore QR listener restricted. Falling back to LocalStorage sync:", error);
+    });
+
+    // 2. Poll LocalStorage fallback for same-machine frame pairing emulation
     const interval = setInterval(() => {
       const liveToken = localStorage.getItem(`approved_session_${qrSessionId}`);
       if (liveToken) {
@@ -117,7 +159,10 @@ export default function AuthScreen({
       }
     }, 1200);
 
-    return () => clearInterval(interval);
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, [showQrMode, qrSessionId, onLoginSuccess, showToast]);
 
   // Third-party authentications
@@ -135,26 +180,18 @@ export default function AuthScreen({
         showToast("Connected via linked Google Workspace SSO!", "success");
       }
     } catch (err: any) {
-      showToast(err.message || "Google authentication failed.", "error");
+      console.error("Google SSO error:", err);
+      const isIframe = window.self !== window.top;
+      if (isIframe || err.code === "auth/popup-blocked" || err.message?.toLowerCase().includes("popup")) {
+        showToast("🔒 Browser restricted popup inside preview frame. Click the 'Open in New Tab' icon in the top-right corner to login, or use email/password instead!", "error");
+      } else if (err.code === "auth/operation-not-allowed") {
+        showToast("Google Sign-In is disabled. Please enable Google provider in your Firebase Console authentication options.", "error");
+      } else {
+        showToast(err.message || "Google authentication failed.", "error");
+      }
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleAppleSignInAttempt = () => {
-    setIsLoading(true);
-    showToast("Apple Sign-In is only active on native iOS binaries. Fallback initiated.", "info");
-    // Simulate Apple credentials response for preview
-    setTimeout(() => {
-      onLoginSuccess({
-        id: "APPLE_MOCK_USER_" + Math.random().toString(36).substring(2, 7).toUpperCase(),
-        name: "Apple Operator",
-        role: "Technician",
-        email: "apple.operator@example.com"
-      });
-      showToast("Signed in successfully using simulated Apple ID keychain (Sandbox Bypass).", "success");
-      setIsLoading(false);
-    }, 1200);
   };
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
@@ -266,7 +303,7 @@ export default function AuthScreen({
               ? "Scan code with your active authenticated companion device to synchronize." 
               : authTab === "signin" 
                 ? "Provide your authorized credentials or connect instantly via quick SSO protocols below."
-                : "Create an operator account. Enter your name, email, master password, and choose your workspace role."}
+                : "Create an operator account. Enter your name, email, and master password to get started."}
           </p>
         </div>
 
@@ -461,9 +498,33 @@ export default function AuthScreen({
                   </div>
                 </div>
 
+                <div className="space-y-1">
+                  <label htmlFor="register-role" className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider">
+                    Assigned Workspace Role
+                  </label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-3">
+                      <Layers className="w-3.5 h-3.5 text-gray-400" />
+                    </span>
+                    <select
+                      id="register-role"
+                      name="role"
+                      value={regRole}
+                      onChange={(e) => setRegRole(e.target.value as UserRole)}
+                      className="w-full bg-slate-50 dark:bg-stone-950 border border-gray-150 dark:border-stone-850 rounded-xl py-2 pl-9 pr-4 text-xs font-semibold text-gray-800 dark:text-stone-250 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 appearance-none cursor-pointer"
+                    >
+                      <option value="Staff">Staff Operator</option>
+                      <option value="Manager">Manager</option>
+                      <option value="Technician">Technician</option>
+                      <option value="Receptionist">Receptionist</option>
+                      <option value="Owner">Business Owner</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="space-y-1 flex-1">
                   <label htmlFor="register-password" className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider flex justify-between items-center">
-                    <span>Master Password</span>
+                    <span>Password (min. 8 characters)</span>
                     {regPassword && (
                       <span className={`text-[8px] font-black uppercase tracking-widest ${
                         regPassword.length < 8 ? "text-rose-500" :
@@ -486,7 +547,7 @@ export default function AuthScreen({
                       required
                       value={regPassword}
                       onChange={(e) => setRegPassword(e.target.value)}
-                      placeholder="e.g. Guard@9821"
+                      placeholder="e.g. SecurePass1@"
                       className="w-full bg-slate-50 dark:bg-stone-950 border border-gray-150 dark:border-stone-850 rounded-xl py-2 pl-9 pr-10 text-xs font-semibold text-gray-800 dark:text-stone-250 placeholder-gray-400 dark:placeholder-stone-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 font-sans"
                     />
                     <button
@@ -544,44 +605,20 @@ export default function AuthScreen({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="col-span-2 space-y-1">
-                    <label className="block text-[9px] font-black text-gray-400 dark:text-stone-500 uppercase tracking-wider">
-                      Assigned Workspace Role
-                    </label>
-                    <div className="relative">
-                      <span className="absolute inset-y-0 left-0 flex items-center pl-3">
-                        <Key className="w-3.5 h-3.5 text-gray-400" />
-                      </span>
-                      <select
-                        value={regRole}
-                        onChange={(e) => setRegRole(e.target.value as UserRole)}
-                        className="w-full bg-slate-50 dark:bg-stone-950 border border-gray-150 dark:border-stone-850 rounded-xl py-2 pl-9 pr-4 text-xs font-bold text-gray-700 dark:text-stone-300 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 outline-none appearance-none cursor-pointer"
-                      >
-                        <option value="Staff">Staff Operator</option>
-                        <option value="Technician">Active Technician</option>
-                        <option value="Manager">Workspace Manager</option>
-                        <option value="Owner">System Owner</option>
-                        <option value="Receptionist">Receptionist</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full bg-indigo-650 hover:bg-indigo-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider py-2.5 rounded-xl text-center shadow-md shadow-indigo-500/10 cursor-pointer transition-all active:scale-98 border-none flex items-center justify-center gap-2"
+                  className="w-full bg-[#6366f1] hover:bg-indigo-600 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider py-2.5 rounded-xl text-center shadow-md shadow-indigo-500/10 cursor-pointer transition-all active:scale-98 border-none flex items-center justify-center gap-2"
                 >
                   {isLoading ? (
                     <>
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Creating Profile...</span>
+                      <span>Creating Account...</span>
                     </>
                   ) : (
                     <>
                       <UserPlus className="w-3.5 h-3.5" />
-                      <span>Register Workspace Operator</span>
+                      <span>Register Account</span>
                     </>
                   )}
                 </button>
@@ -626,29 +663,25 @@ export default function AuthScreen({
                 <span>Google Workspace Single Sign-On</span>
               </button>
 
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={handleAppleSignInAttempt}
-                  disabled={isLoading}
-                  className="flex items-center justify-center gap-2 py-2 px-3 bg-slate-900 dark:bg-stone-950 hover:bg-black dark:hover:bg-black disabled:opacity-50 text-white font-extrabold text-[9px] uppercase tracking-wider rounded-xl shadow-xs transition-all cursor-pointer active:scale-97 border-none"
-                >
-                  {/* SVG Apple logo */}
-                  <svg className="w-3.5 h-3.5 shrink-0 fill-current" viewBox="0 0 24 24">
-                    <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.17c.66-.81 1.11-1.93.99-3.06-1 .04-2.13.67-2.85 1.49-.62.72-1.17 1.87-1.02 2.95 1.1.09 2.14-.52 2.88-1.38" />
-                  </svg>
-                  <span>Apple ID</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleEnableQrMode}
-                  className="flex items-center justify-center gap-2 py-2 px-3 bg-indigo-50 hover:bg-indigo-100 dark:bg-stone-800 dark:hover:bg-stone-750 text-indigo-700 dark:text-indigo-400 border border-indigo-100 dark:border-stone-750 font-extrabold text-[9px] uppercase tracking-wider rounded-xl transition-all cursor-pointer active:scale-97"
-                >
-                  <QrCode className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
-                  <span>Instant QR</span>
-                </button>
+              {/* Informative helper for Google Single Sign-On inside AI Studio iframe preview */}
+              <div className="p-2.5 bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/10 dark:border-amber-500/20 rounded-xl text-[9px] text-amber-700 dark:text-amber-400 font-medium leading-relaxed text-left space-y-1">
+                <span className="font-extrabold block uppercase tracking-wider text-center text-amber-800 dark:text-amber-300">💡 Google SSO inside Iframe Preview</span>
+                <p>
+                  Because the live preview runs inside a sandboxed cross-origin iframe, your browser blocks Google login popups by default.
+                </p>
+                <p>
+                  To log in with Google, click the <strong>'Open in New Tab'</strong> icon in the top-right corner of the preview panel, or use traditional email login.
+                </p>
               </div>
+
+              <button
+                type="button"
+                onClick={handleEnableQrMode}
+                className="w-full flex items-center justify-center gap-2.5 py-2 px-4 bg-indigo-50 hover:bg-indigo-100 dark:bg-stone-800 dark:hover:bg-stone-750 text-indigo-700 dark:text-indigo-400 border border-indigo-100 dark:border-stone-750 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer active:scale-97"
+              >
+                <QrCode className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
+                <span>Instant Companion QR Sign-In</span>
+              </button>
 
             </div>
           </div>
